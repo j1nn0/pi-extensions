@@ -16,7 +16,9 @@ Configure which models are available for sparring:
 /spar-models
 ```
 
-This shows all models from your pi configuration and lets you assign short aliases (e.g., `opus`, `gpt5`).
+This shows all models from your pi configuration and lets you assign short aliases (e.g., `opus`, `gpt`).
+
+> **Note:** After changing model aliases, restart pi for the agent to see the updated aliases. The aliases work immediately for tool execution, but the agent's tool description updates on next startup.
 
 ## Usage
 

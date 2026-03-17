@@ -48,14 +48,13 @@ function suggestAlias(provider: string, modelId: string): string {
 
 export default function (pi: ExtensionAPI) {
 	// ==========================================================================
-	// Tool Registration
+	// Tool Registration — called on load and after /spar-models changes config
 	// ==========================================================================
 
 	pi.registerTool({
 		name: "spar",
 		label: "Spar",
 		get description() {
-			const modelsDesc = getConfiguredModelsDescription();
 			return `Spar with another AI model — this is a **conversation**, not a lookup.
 
 Use for debugging, design, architecture review, or challenging your own thinking.
@@ -71,7 +70,7 @@ or run commands — they can't. Give them file paths and let them dig through co
 Different architectures have different biases and blindspots — that's the value.
 
 **Configured models:**
-${modelsDesc}
+${getConfiguredModelsDescription()}
 
 **Actions:**
 - \`send\` - Send a message to a spar session (creates session if needed)
@@ -568,7 +567,7 @@ spar({
 				const id = idParts.join("/");
 				config.models = config.models.filter(m => !(m.provider === provider && m.id === id));
 				saveSparConfig(config);
-				ctx.ui.notify(`Removed ${result.model} from spar models`, "info");
+				ctx.ui.notify(`Removed ${result.model} from spar models. Restart pi to update.`, "info");
 				return;
 			}
 
@@ -599,7 +598,7 @@ spar({
 			);
 			config.models.push({ alias: cleanAlias, provider, id });
 			saveSparConfig(config);
-			ctx.ui.notify(`Configured ${cleanAlias} → ${result.model}`, "info");
+			ctx.ui.notify(`Configured ${cleanAlias} → ${result.model}. Restart pi to update.`, "info");
 		},
 	});
 
