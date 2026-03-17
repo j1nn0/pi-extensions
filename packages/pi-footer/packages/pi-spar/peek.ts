@@ -355,6 +355,16 @@ export class SparPeekOverlay {
 			this.status = event.status || "thinking";
 			this.toolName = event.toolName;
 
+			// If there's a user message that hasn't been persisted to file yet, show it
+			if (event.userMessage) {
+				const text = this.getUserText(event.userMessage);
+				if (text) {
+					this.chatContainer.addChild(
+						new UserMessageComponent(text, getMarkdownTheme()),
+					);
+				}
+			}
+
 			// If there's a partial message, use it directly (faithful reconstruction)
 			if (event.partialMessage) {
 				this.streamingMessage = event.partialMessage;
@@ -383,8 +393,16 @@ export class SparPeekOverlay {
 				}
 			}
 		} else if (event.type === "message_start") {
-			// New assistant message — create streaming component (same as interactive-mode)
-			if (event.message?.role === "assistant") {
+			if (event.message?.role === "user") {
+				// User message — render immediately (same as interactive-mode)
+				const text = this.getUserText(event.message);
+				if (text) {
+					this.chatContainer.addChild(
+						new UserMessageComponent(text, getMarkdownTheme()),
+					);
+				}
+			} else if (event.message?.role === "assistant") {
+				// New assistant message — create streaming component
 				this.cleanupStreaming();
 				this.streamingMessage = event.message;
 				this.streamingComponent = new AssistantMessageComponent(

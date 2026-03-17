@@ -222,7 +222,8 @@ class EventBroadcaster {
 	// Track state for sync on connect
 	private currentStatus: "thinking" | "streaming" | "tool" | "done" = "thinking";
 	private currentToolName?: string;
-	private currentPartialMessage: any = null; // The full partial AssistantMessage
+	private currentPartialMessage: any = null;
+	private currentUserMessage: any = null;
 
 	constructor(sessionId: string) {
 		this.socketPath = getSocketPath(sessionId);
@@ -244,6 +245,7 @@ class EventBroadcaster {
 				status: this.currentStatus,
 				toolName: this.currentToolName,
 				partialMessage: this.currentPartialMessage,
+				userMessage: this.currentUserMessage,
 			};
 			try { conn.write(JSON.stringify(syncEvent) + "\n"); } catch {}
 			
@@ -262,7 +264,9 @@ class EventBroadcaster {
 
 	broadcast(event: any): void {
 		// Track state for sync
-		if (event.type === "message_start" && event.message?.role === "assistant") {
+		if (event.type === "message_start" && event.message?.role === "user") {
+			this.currentUserMessage = event.message;
+		} else if (event.type === "message_start" && event.message?.role === "assistant") {
 			this.currentPartialMessage = event.message;
 			this.currentStatus = "thinking";
 		} else if (event.type === "message_update" && event.message?.role === "assistant") {
@@ -279,6 +283,7 @@ class EventBroadcaster {
 			this.currentToolName = event.toolName;
 		} else if (event.type === "message_end" || event.type === "agent_end") {
 			this.currentPartialMessage = null;
+			this.currentUserMessage = null;
 			this.currentStatus = "done";
 			this.currentToolName = undefined;
 		}
@@ -441,6 +446,24 @@ export function listSessions(): SessionSummary[] {
 export function sessionExists(name: string): boolean {
 	validateSessionName(name);
 	return fs.existsSync(getSessionInfoPath(name));
+}
+
+/**
+ * Delete a session and all its files (.jsonl, .info.json, .log)
+ */
+export function deleteSession(name: string): void {
+	validateSessionName(name);
+	const files = [
+		getSessionFilePath(name),
+		getSessionInfoPath(name),
+		getSessionLogPath(name),
+	];
+	for (const f of files) {
+		try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
+	}
+	// Clean up socket if still around
+	const socketPath = getSocketPath(name);
+	try { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); } catch {}
 }
 
 /**

@@ -35,6 +35,7 @@
     "index.ts",
     "core.ts",
     "peek.ts",
+    "assets/peek-demo.jpg",
     "README.md",
     "LICENSE"
   ]

@@ -2,13 +2,13 @@
  * Spar Extension - Agent-to-agent sparring
  * 
  * Provides a `spar` tool for back-and-forth dialogue with peer AI models,
- * plus /peek and /peek-all commands for viewing spar sessions.
+ * plus /spar and /spview commands for viewing spar sessions.
  */
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { Text, Container, Spacer, SelectList, Input, matchesKey, type SelectItem, type SelectListTheme } from "@mariozechner/pi-tui";
+import { Text, Container, Spacer, SelectList, Input, matchesKey, truncateToWidth, type SelectItem, type SelectListTheme } from "@mariozechner/pi-tui";
 import {
 	sendMessage,
 	listSessions,
@@ -17,6 +17,7 @@ import {
 	getConfiguredModelsDescription,
 	loadSparConfig,
 	saveSparConfig,
+	deleteSession,
 	type SparModelConfig,
 	DEFAULT_TIMEOUT,
 } from "./core.js";
@@ -48,7 +49,7 @@ function suggestAlias(provider: string, modelId: string): string {
 
 export default function (pi: ExtensionAPI) {
 	// ==========================================================================
-	// Tool Registration — called on load and after /spar-models changes config
+	// Tool Registration — model aliases are configured via /spmodels
 	// ==========================================================================
 
 	pi.registerTool({
@@ -117,7 +118,7 @@ spar({
 				description: "Message to send (required for send)",
 			})),
 			model: Type.Optional(Type.String({
-				description: "Model alias (from /spar-models) or provider:model. Required for first message in a session.",
+				description: "Model alias (from /spmodels) or provider:model. Required for first message in a session.",
 			})),
 			thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high"] as const, {
 				description: "Thinking level (default: high)",
@@ -437,14 +438,14 @@ spar({
 	});
 
 	// ==========================================================================
-	// Command: /spar-models — configure available sparring models
+	// Command: /spmodels — configure available sparring models
 	// ==========================================================================
 
-	pi.registerCommand("spar-models", {
+	pi.registerCommand("spmodels", {
 		description: "Configure models available for sparring",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) {
-				ctx.ui.notify("Interactive mode required for /spar-models", "warning");
+				ctx.ui.notify("Interactive mode required for /spmodels", "warning");
 				return;
 			}
 
@@ -603,11 +604,11 @@ spar({
 	});
 
 	// ==========================================================================
-	// Commands: /peek and /peek-all
+	// Commands: /spar and /spview
 	// ==========================================================================
 
-	pi.registerCommand("peek", {
-		description: "Peek at a spar session. Usage: /peek [session-name]",
+	pi.registerCommand("spar", {
+		description: "Peek at a spar session. Usage: /spar [session-name]",
 		getArgumentCompletions: (prefix: string) => {
 			const sessions = listPeekableSessions();
 			const items = sessions.map((s) => ({
@@ -632,7 +633,7 @@ spar({
 			if (!sessionId) {
 				const available = listPeekableSessions();
 				if (available.length > 0) {
-					ctx.ui.notify(`No recent spar. Try: /peek ${available[0].name}`, "info");
+					ctx.ui.notify(`No recent spar. Try: /spar ${available[0].name}`, "info");
 				} else {
 					ctx.ui.notify("No spar sessions found", "info");
 				}
@@ -660,100 +661,164 @@ spar({
 		},
 	});
 
-	pi.registerCommand("peek-all", {
-		description: "List all spar sessions and pick one to peek",
+	pi.registerCommand("spview", {
+		description: "Browse spar sessions — view, peek, or delete",
 		handler: async (_args, ctx) => {
-			const sessions = listPeekableSessions();
+			const result = await ctx.ui.custom<{ action: "peek"; name: string } | undefined>(
+				(tui, theme, _kb, done) => {
+					let selectedIndex = 0;
+					let cachedLines: string[] | undefined;
 
-			if (sessions.length === 0) {
-				ctx.ui.notify("No spar sessions found", "info");
-				return;
-			}
+					const fg = theme.fg.bind(theme);
 
-			// Use custom component with SelectList for proper filtering/pagination
-			const selected = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-				const items: SelectItem[] = sessions.map((s) => {
-					const status = s.active ? "●" : "○";
-					const model = s.model ? `[${s.model}]` : "";
-					const age = s.lastActivity ? formatAge(s.lastActivity) : "";
-					const msgs = s.messageCount > 0 ? `${s.messageCount}msg` : "";
-					// Format: "● session-name [gpt5] 3msg 2h"
-					const desc = [model, msgs, age].filter(Boolean).join(" ");
+					function refresh() {
+						cachedLines = undefined;
+						tui.requestRender();
+					}
+
 					return {
-						value: s.name,
-						label: `${status} ${s.name}`,
-						description: desc,
+						render(width: number): string[] {
+							if (cachedLines) return cachedLines;
+
+							const sessions = listPeekableSessions();
+							if (selectedIndex >= sessions.length) selectedIndex = Math.max(0, sessions.length - 1);
+
+							const lines: string[] = [];
+
+							lines.push(fg("accent", "─".repeat(width)));
+							lines.push(fg("accent", theme.bold(" Spar Sessions")) + fg("dim", ` (${sessions.length})`));
+							lines.push("");
+
+							if (sessions.length === 0) {
+								lines.push(fg("dim", "  No spar sessions found"));
+							} else {
+								// Table header
+								const header = [
+									"name".padEnd(30),
+									"model".padEnd(8),
+									"msgs".padStart(5),
+									"age".padStart(6),
+								].join(" ");
+								lines.push(fg("dim", `    ${header}`));
+
+								// Paginated viewport — show PAGE_SIZE rows around selection
+								const PAGE_SIZE = 15;
+								let viewStart = 0;
+								if (sessions.length > PAGE_SIZE) {
+									// Keep selection centered in viewport
+									viewStart = Math.max(0, Math.min(
+										selectedIndex - Math.floor(PAGE_SIZE / 2),
+										sessions.length - PAGE_SIZE,
+									));
+								}
+								const viewEnd = Math.min(viewStart + PAGE_SIZE, sessions.length);
+
+								if (viewStart > 0) {
+									lines.push(fg("dim", `    ↑ ${viewStart} more`));
+								}
+
+								for (let i = viewStart; i < viewEnd; i++) {
+									const s = sessions[i];
+									const isSelected = i === selectedIndex;
+									const prefix = isSelected ? fg("accent", "→ ") : "  ";
+									const icon = s.active ? fg("success", "●") : fg("dim", "○");
+
+									const row = [
+										s.name.slice(0, 30).padEnd(30),
+										(s.model || "—").padEnd(8),
+										String(s.messageCount || 0).padStart(5),
+										(s.lastActivity ? formatAge(s.lastActivity) : "—").padStart(6),
+									].join(" ");
+
+									const color = isSelected ? "accent" : s.active ? "text" : "muted";
+									lines.push(truncateToWidth(`${prefix}${icon} ${fg(color, row)}`, width));
+								}
+
+								if (viewEnd < sessions.length) {
+									lines.push(fg("dim", `    ↓ ${sessions.length - viewEnd} more`));
+								}
+							}
+
+							lines.push("");
+
+							// Contextual help
+							const helpParts = ["↑↓ navigate"];
+							if (sessions.length > 0) {
+								helpParts.push("enter peek");
+								helpParts.push("d delete");
+								helpParts.push("D delete all");
+							}
+							helpParts.push("esc close");
+							lines.push(fg("dim", ` ${helpParts.join(" · ")}`));
+
+							lines.push(fg("accent", "─".repeat(width)));
+
+							cachedLines = lines;
+							return lines;
+						},
+
+						handleInput(data: string): void {
+							const sessions = listPeekableSessions();
+
+							if (matchesKey(data, "escape") || data === "q") {
+								done(undefined);
+								return;
+							}
+							if (matchesKey(data, "up") || data === "k") {
+								selectedIndex = selectedIndex <= 0 ? sessions.length - 1 : selectedIndex - 1;
+								refresh();
+								return;
+							}
+							if (matchesKey(data, "down") || data === "j") {
+								selectedIndex = selectedIndex >= sessions.length - 1 ? 0 : selectedIndex + 1;
+								refresh();
+								return;
+							}
+							if (matchesKey(data, "return")) {
+								if (sessions.length > 0 && sessions[selectedIndex]) {
+									done({ action: "peek", name: sessions[selectedIndex].name });
+								}
+								return;
+							}
+							if (data === "d") {
+								if (sessions.length > 0 && sessions[selectedIndex]) {
+									deleteSession(sessions[selectedIndex].name);
+									refresh();
+								}
+								return;
+							}
+							if (data === "D") {
+								for (const s of sessions) {
+									if (!s.active) deleteSession(s.name);
+								}
+								refresh();
+								return;
+							}
+						},
+
+						invalidate(): void {
+							cachedLines = undefined;
+						},
 					};
-				});
-
-				const selectList = new SelectList(items, 15, {
-					selectedPrefix: (t: string) => theme.bg("selectedBg", theme.fg("accent", t)),
-					selectedText: (t: string) => theme.bg("selectedBg", t),
-					description: (t: string) => theme.fg("muted", t),
-					scrollInfo: (t: string) => theme.fg("dim", t),
-					noMatch: (t: string) => theme.fg("warning", t),
-				});
-
-				selectList.onSelect = (item) => done(item.value);
-				selectList.onCancel = () => done(null);
-
-				// Wrapper with filter display
-				let filter = "";
-				const filterText = new Text("", 0, 0);
-				
-				const updateFilterDisplay = () => {
-					if (filter) {
-						filterText.text = theme.fg("dim", "Filter: ") + theme.fg("accent", filter) + theme.fg("dim", "▏");
-					} else {
-						filterText.text = theme.fg("dim", "Type to filter...");
-					}
-				};
-				updateFilterDisplay();
-
-				const container = new Container();
-				container.addChild(new Text(theme.fg("accent", "Spar Sessions") + theme.fg("dim", " (↑↓ navigate, enter select, esc cancel)"), 0, 1));
-				container.addChild(filterText);
-				container.addChild(selectList);
-
-				(container as any).handleInput = (data: string) => {
-					if (matchesKey(data, "escape")) {
-						done(null);
-					} else if (matchesKey(data, "return")) {
-						selectList.handleInput(data);
-					} else if (matchesKey(data, "up") || matchesKey(data, "down")) {
-						selectList.handleInput(data);
-						tui.requestRender();
-					} else if (matchesKey(data, "backspace")) {
-						filter = filter.slice(0, -1);
-						selectList.setFilter(filter);
-						updateFilterDisplay();
-						tui.requestRender();
-					} else if (data.length === 1 && data >= " ") {
-						filter += data;
-						selectList.setFilter(filter);
-						updateFilterDisplay();
-						tui.requestRender();
-					}
-				};
-
-				return container;
-			});
-
-			if (!selected) return;
-
-			await ctx.ui.custom<void>(
-				(tui, theme, _kb, done) => new SparPeekOverlay(tui, theme, selected, done),
-				{
-					overlay: true,
-					overlayOptions: {
-						anchor: "right-center",
-						width: "45%",
-						minWidth: 50,
-						maxHeight: 60,
-						margin: { right: 2, top: 2, bottom: 2 },
-					},
-				}
+				},
 			);
+
+			// Open peek if selected
+			if (result?.action === "peek") {
+				await ctx.ui.custom<void>(
+					(tui, theme, _kb, done) => new SparPeekOverlay(tui, theme, result.name, done),
+					{
+						overlay: true,
+						overlayOptions: {
+							anchor: "right-center",
+							width: "45%",
+							minWidth: 50,
+							maxHeight: 60,
+							margin: { right: 2, top: 2, bottom: 2 },
+						},
+					},
+				);
+			}
 		},
 	});
 }

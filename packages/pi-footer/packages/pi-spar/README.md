@@ -13,7 +13,7 @@ pi install npm:@ogulcancelik/pi-spar
 Configure which models are available for sparring:
 
 ```
-/spar-models
+/spmodels
 ```
 
 This shows all models from your pi configuration and lets you assign short aliases (e.g., `opus`, `gpt`).
@@ -29,7 +29,7 @@ The extension provides a `spar` tool the agent can use, plus commands for viewin
 The agent uses this automatically when you ask it to consult another model:
 
 ```
-"spar with gpt5 about whether this architecture makes sense"
+"spar with gpt about whether this architecture makes sense"
 "ask opus to review the error handling in src/auth.ts"
 ```
 
@@ -39,19 +39,31 @@ Sessions persist — follow up, push back, disagree. The peer can read files, gr
 
 | Command | Description |
 |---------|-------------|
-| `/spar-models` | Configure available sparring models |
-| `/peek [session]` | Watch a spar session in a floating overlay |
-| `/peek-all` | List all sessions, pick one to peek |
+| `/spmodels` | Configure available sparring models |
+| `/spar [session]` | Watch a spar session in a floating overlay |
+| `/spview` | Browse all sessions — view, peek, or delete |
 
-### Peek
+### Peek overlay
 
-The peek overlay renders the spar conversation using the same components as pi's main TUI — same message styling, same syntax-highlighted tool output, same everything. It's pi inside pi.
+`/spar` opens a floating overlay that renders the spar conversation using the same components as pi's main TUI — same message styling, same syntax-highlighted tool output, same everything. It's pi inside pi.
+
+![peek overlay demo](./assets/peek-demo.jpg)
 
 - **j/k** or **↑/↓** — scroll
 - **g/G** — jump to top/bottom
 - **q** or **Esc** — close
 
 Live sessions auto-scroll as the peer model responds.
+
+### Session browser
+
+`/spview` opens an inline session browser:
+
+- **j/k** or **↑/↓** — navigate
+- **enter** — open peek overlay for selected session
+- **d** — delete selected session
+- **D** — delete all non-active sessions
+- **q** or **Esc** — close
 
 ## License
 
