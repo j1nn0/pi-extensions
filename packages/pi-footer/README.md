@@ -10,6 +10,7 @@ Extensions for [pi](https://github.com/badlogic/pi-mono), the terminal-based cod
 | [pi-web-browse](packages/pi-web-browse) | Browse the web via a headless browser (CDP) |
 | [pi-sketch](packages/pi-sketch) | Visual sketching in the terminal |
 | [pi-goal](packages/pi-goal) | Break work into tasks, spawn parallel worker agents |
+| [pi-ghostty-theme-sync](packages/pi-ghostty-theme-sync) | Sync pi theme with Ghostty terminal colors |
 
 ## Install
 
