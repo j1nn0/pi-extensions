@@ -835,14 +835,19 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
 
     ctx.ui.setFooter((tui: any, theme: any, footerData: any) => {
-      // Store tui reference for event handlers — must be set before any async
-      // fetch completes so requestRender() works on first load.
       tuiRef = tui;
       
       const unsub = footerData.onBranchChange(() => {
         refreshGitCache();
         tui.requestRender();
       });
+
+      // Initial fetch inside factory — tui is guaranteed available here,
+      // so requestRender() will work when the async fetch completes.
+      if (ctx.model?.provider) {
+        fetchUsage(ctx.model.provider);
+        startRefreshTimer();
+      }
 
       return {
         dispose: () => {
@@ -919,11 +924,6 @@ export default function (pi: ExtensionAPI) {
       };
     });
 
-    // Initial usage fetch — after setFooter so tuiRef is set
-    if (ctx.model?.provider) {
-      fetchUsage(ctx.model.provider);
-      startRefreshTimer();
-    }
   });
 
   // Refresh when model changes — fetch immediately, restart timer
