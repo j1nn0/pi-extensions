@@ -794,10 +794,11 @@ export default function (pi: ExtensionAPI) {
       tuiRef?.requestRender();
     }
 
-    // Fetch fresh in background
+    // Fetch fresh in background — keep cached data on transient errors
     fetchUsageForProvider(provider)
       .then((u) => {
         if (!u || activeProvider !== provider) return;
+        if (u.windows.length === 0 && u.error && cached?.windows.length) return;
         usageCache.set(provider, u);
         latestUsage = u;
         tuiRef?.requestRender();
@@ -810,10 +811,13 @@ export default function (pi: ExtensionAPI) {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {
       if (activeProvider) {
-        fetchUsageForProvider(activeProvider)
+        const provider = activeProvider;
+        const cached = usageCache.get(provider);
+        fetchUsageForProvider(provider)
           .then((u) => {
-            if (!u) return;
-            usageCache.set(activeProvider!, u);
+            if (!u || activeProvider !== provider) return;
+            if (u.windows.length === 0 && u.error && cached?.windows.length) return;
+            usageCache.set(provider, u);
             latestUsage = u;
             tuiRef?.requestRender();
           })
