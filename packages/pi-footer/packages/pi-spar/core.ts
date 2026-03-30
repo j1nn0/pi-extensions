@@ -585,6 +585,17 @@ export async function sendMessage(
 			throw new Error(`Session "${sessionName}" doesn't exist. Provide a model to create it.`);
 		}
 		info = createSession(sessionName, options.model, options.thinking);
+	} else if (options.model) {
+		const requestedModel = resolveModel(options.model);
+		if (requestedModel.fullModel !== info.model) {
+			const existingLabel = getModelAlias(info.model) ?? info.model;
+			const requestedLabel = getModelAlias(requestedModel.fullModel) ?? options.model;
+			throw new Error(
+				`Session "${sessionName}" already exists with model "${existingLabel}". ` +
+				`You requested "${requestedLabel}". Session names must be unique per model. ` +
+				`Use a different session name or omit model to continue the existing session.`
+			);
+		}
 	}
 
 	const timeout = options.timeout ?? DEFAULT_TIMEOUT;
