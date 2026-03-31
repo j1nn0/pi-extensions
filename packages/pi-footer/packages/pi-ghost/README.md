@@ -35,7 +35,7 @@ So:
 - it starts with the **same currently selected model** as the main session
 - it uses **no persisted session file**
 - it renders with native pi components for user messages, assistant messages, thinking blocks, and tool execution cards
-- it can be **hidden** and **restored** without losing the temporary conversation
+- it can be **hidden** without losing the temporary conversation
 - when you **close** it, the ghost session is disposed completely
 
 ## Usage
@@ -65,18 +65,18 @@ You can also pass the first message inline as a shortcut:
 ```
 
 If the overlay is already open, `/gpi <prompt>` sends another message into the ghost session.
-If the overlay is hidden, `/gpi` brings it back.
+If the overlay is hidden, run `/gpi` again to bring it back.
 
 ## Controls
 
 - `Enter` — send message to ghost pi
-- `Ctrl+S` — hide / restore the overlay
+- `Ctrl+S` — hide the overlay
 - `Esc` — close the ghost session completely
 
 When hidden, a small widget is shown above the prompt:
 
 ```text
-/gpi is running • ctrl+s to bring it back
+/gpi is running • run /gpi to bring it back
 ```
 
 ## Behavior
@@ -86,7 +86,7 @@ Ghost pi is **not** your main session.
 It has its own temporary conversation state:
 
 - hide it → state stays in memory
-- restore it → continue where you left off
+- run `/gpi` again → continue where you left off
 - close it → state is gone
 
 The ghost session uses the **main session's model at the moment it is created**.

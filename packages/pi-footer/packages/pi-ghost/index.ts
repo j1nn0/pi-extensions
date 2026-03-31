@@ -238,7 +238,7 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.setWidget(
 				"pi-ghost",
 				(_tui, theme) => ({
-					render: () => [theme.fg("accent", "/gpi ") + theme.fg("dim", "is running • ctrl+s to bring it back")],
+					render: () => [theme.fg("accent", "/gpi ") + theme.fg("dim", "is running • run /gpi to bring it back")],
 					invalidate: () => {},
 				}),
 				{ placement: "aboveEditor" },
@@ -354,18 +354,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerShortcut("ctrl+s", {
-		description: "Restore hidden ghost pi overlay",
-		handler: async (ctx) => {
-			const commandCtx = ctx as ExtensionCommandContext;
-			if (!overlayHandle) return;
-			if (overlayHandle.isHidden()) {
-				setHiddenState(commandCtx, false);
-				return;
-			}
-			setHiddenState(commandCtx, true);
-		},
-	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		cleanupGhost(ctx as ExtensionCommandContext);
