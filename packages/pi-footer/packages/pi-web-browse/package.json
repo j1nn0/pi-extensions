@@ -5,7 +5,7 @@
   "type": "module",
   "main": "web-browse.js",
   "bin": {
-    "web-browse": "./web-browse.js"
+    "web-browse": "web-browse.js"
   },
   "scripts": {
     "test": "node --test"
