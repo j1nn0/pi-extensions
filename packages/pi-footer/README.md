@@ -12,6 +12,7 @@ Extensions for [pi](https://github.com/badlogic/pi-mono), the terminal-based cod
 | [pi-session-recall](packages/pi-session-recall) | Search and query past sessions — "remember when we tried X?" |
 | [pi-sketch](packages/pi-sketch) | Visual sketching in the terminal |
 | [pi-spar](packages/pi-spar) | Agent-to-agent sparring — back-and-forth conversations with peer AI models for code review, debugging, and design |
+| [pi-ssh-tools](packages/pi-ssh-tools) | Toggle explicit SSH tools on demand via `/ssh` without replacing local tools |
 | [pi-tmux](packages/pi-tmux) | Tmux pane management — run dev servers and long-running processes in named panes |
 | [pi-web-browse](packages/pi-web-browse) | Browse the web via a headless browser (CDP) |
 
