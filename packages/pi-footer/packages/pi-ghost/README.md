@@ -70,6 +70,9 @@ If the overlay is hidden, run `/gpi` again to bring it back.
 ## Controls
 
 - `Enter` — send message to ghost pi
+- `↑` / `↓` — scroll the transcript
+- `PageUp` / `PageDown` — scroll faster
+- `Home` / `End` — jump to top or bottom
 - `Ctrl+S` — hide the overlay
 - `Esc` — close the ghost session completely
 
@@ -82,6 +85,8 @@ When hidden, a small widget is shown above the prompt:
 ## Behavior
 
 Ghost pi is **not** your main session.
+
+The overlay opens at the latest message and stays in follow mode while new output streams. Scroll up to inspect older output, then use `End` to jump back to live output.
 
 It has its own temporary conversation state:
 

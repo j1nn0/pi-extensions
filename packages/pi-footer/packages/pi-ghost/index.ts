@@ -11,19 +11,26 @@ import {
 	type ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Container, Input, Key, matchesKey, Spacer, Text, type Focusable, type KeybindingsManager, type OverlayHandle, type TUI } from "@mariozechner/pi-tui";
+import { Container, Input, Key, matchesKey, truncateToWidth, visibleWidth, type Focusable, type KeybindingsManager, type OverlayHandle, type TUI } from "@mariozechner/pi-tui";
 
-class GhostOverlayComponent extends Container implements Focusable {
-	private readonly transcriptContainer: Container;
-	private readonly input: Input;
-	private readonly status: Text;
+class GhostOverlayComponent implements Focusable {
+	private readonly transcriptContainer = new Container();
+	private readonly input = new Input();
 	private readonly tui: TUI;
 	private readonly theme: ExtensionCommandContext["ui"]["theme"];
+	private readonly sessionCwd: string;
+	private readonly modelLabel: string;
 	private readonly onSubmitMessage: (text: string) => void;
 	private readonly onHideOverlay: () => void;
 	private readonly onCloseOverlay: () => void;
 	private streamingComponent?: AssistantMessageComponent;
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+	private statusText = "Ask something quick.";
+	private scrollOffset = Number.MAX_SAFE_INTEGER;
+	private followMode = true;
+	private cachedTranscriptLines?: string[];
+	private cachedTranscriptWidth?: number;
+	private lastInnerWidth = 0;
 	private _focused = false;
 
 	get focused(): boolean {
@@ -39,65 +46,140 @@ class GhostOverlayComponent extends Container implements Focusable {
 		tui: TUI,
 		theme: ExtensionCommandContext["ui"]["theme"],
 		keybindings: KeybindingsManager,
+		sessionCwd: string,
+		modelLabel: string,
 		onSubmitMessage: (text: string) => void,
 		onHideOverlay: () => void,
 		onCloseOverlay: () => void,
 	) {
-		super();
+		void keybindings;
 		this.tui = tui;
 		this.theme = theme;
+		this.sessionCwd = sessionCwd;
+		this.modelLabel = modelLabel;
 		this.onSubmitMessage = onSubmitMessage;
 		this.onHideOverlay = onHideOverlay;
 		this.onCloseOverlay = onCloseOverlay;
 
-		this.addChild(
-			new Text(
-				theme.fg("accent", theme.bold(" ghost pi ")) +
-					" " +
-					theme.fg("dim", "same model • no session • ctrl+s hide • esc close"),
-				1,
-				1,
-			),
-		);
-
-		this.transcriptContainer = new Container();
-		this.addChild(this.transcriptContainer);
-		this.addChild(new Spacer(1));
-
-		this.status = new Text(theme.fg("dim", "Ask something quick."), 1, 0);
-		this.addChild(this.status);
-		this.addChild(new Spacer(1));
-
-		this.input = new Input();
 		this.input.onSubmit = (value) => {
 			const text = value.trim();
 			if (!text) return;
 			this.input.setValue("");
+			this.scrollToBottom();
 			this.onSubmitMessage(text);
 		};
 		this.input.onEscape = () => {
 			this.onCloseOverlay();
 		};
+	}
 
-		const originalHandleInput = this.input.handleInput.bind(this.input);
-		this.input.handleInput = (data: string) => {
-			if (matchesKey(data, Key.ctrl("s"))) {
-				this.onHideOverlay();
-				return;
-			}
-			originalHandleInput(data);
-		};
+	private invalidateTranscriptCache(): void {
+		this.cachedTranscriptLines = undefined;
+		this.cachedTranscriptWidth = undefined;
+	}
 
-		this.addChild(this.input);
+	private scrollToBottom(): void {
+		this.followMode = true;
+		this.scrollOffset = Number.MAX_SAFE_INTEGER;
+	}
+
+	private getOverlayHeight(): number {
+		return Math.max(14, Math.min(Math.floor(this.tui.terminal.rows * 0.55), this.tui.terminal.rows - 2));
+	}
+
+	private getFallbackInnerWidth(): number {
+		return Math.max(20, Math.floor(this.tui.terminal.columns * 0.85) - 2);
+	}
+
+	private getTranscriptLines(width: number): string[] {
+		if (this.cachedTranscriptLines && this.cachedTranscriptWidth === width) {
+			return this.cachedTranscriptLines;
+		}
+
+		const lines = this.transcriptContainer.render(width);
+		this.cachedTranscriptLines = lines;
+		this.cachedTranscriptWidth = width;
+		return lines;
+	}
+
+	private getCurrentMaxScroll(): number {
+		const innerWidth = this.lastInnerWidth || this.getFallbackInnerWidth();
+		const inputLines = this.input.render(innerWidth);
+		const totalHeight = this.getOverlayHeight();
+		const chromeRows = 5 + inputLines.length;
+		const viewportRows = Math.max(4, totalHeight - chromeRows);
+		const transcriptLines = this.getTranscriptLines(innerWidth);
+		return Math.max(0, transcriptLines.length - viewportRows);
 	}
 
 	setStatus(text: string): void {
-		this.status.setText(this.theme.fg("dim", text));
+		this.statusText = text;
 		this.tui.requestRender();
 	}
 
 	handleInput(data: string): void {
+		if (matchesKey(data, Key.ctrl("s"))) {
+			this.onHideOverlay();
+			return;
+		}
+
+		if (matchesKey(data, Key.up)) {
+			const maxScroll = this.getCurrentMaxScroll();
+			this.followMode = false;
+			this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll) - 1);
+			if (this.scrollOffset >= maxScroll) this.scrollOffset = Math.max(0, maxScroll - 1);
+			this.tui.requestRender();
+			return;
+		}
+
+		if (matchesKey(data, Key.down)) {
+			const maxScroll = this.getCurrentMaxScroll();
+			if (this.followMode) {
+				this.scrollToBottom();
+			} else {
+				this.scrollOffset = Math.min(maxScroll, this.scrollOffset + 1);
+				if (this.scrollOffset >= maxScroll) this.scrollToBottom();
+			}
+			this.tui.requestRender();
+			return;
+		}
+
+		if (matchesKey(data, Key.pageUp)) {
+			const maxScroll = this.getCurrentMaxScroll();
+			this.followMode = false;
+			this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll) - 10);
+			if (this.scrollOffset >= maxScroll) this.scrollOffset = Math.max(0, maxScroll - 10);
+			this.tui.requestRender();
+			return;
+		}
+
+		if (matchesKey(data, Key.pageDown)) {
+			const maxScroll = this.getCurrentMaxScroll();
+			if (this.followMode) {
+				this.scrollToBottom();
+			} else {
+				this.scrollOffset = Math.min(maxScroll, this.scrollOffset + 10);
+				if (this.scrollOffset >= maxScroll) this.scrollToBottom();
+			}
+			this.tui.requestRender();
+			return;
+		}
+
+		if (matchesKey(data, Key.home)) {
+			this.followMode = false;
+			this.scrollOffset = 0;
+			this.tui.requestRender();
+			return;
+		}
+
+		if (matchesKey(data, Key.end)) {
+			this.scrollToBottom();
+			this.tui.requestRender();
+			return;
+		}
+
 		this.input.handleInput(data);
+		this.tui.requestRender();
 	}
 
 	handleSessionEvent(event: AgentSessionEvent): void {
@@ -111,7 +193,7 @@ class GhostOverlayComponent extends Container implements Focusable {
 				}
 
 				if (event.message.role === "assistant") {
-					this.streamingComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...");
+					this.streamingComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme());
 					this.transcriptContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(event.message);
 					this.setStatus("Streaming response...");
@@ -161,7 +243,7 @@ class GhostOverlayComponent extends Container implements Focusable {
 						{ showImages: true },
 						undefined,
 						this.tui,
-						process.cwd(),
+						this.sessionCwd,
 					);
 					this.transcriptContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
@@ -196,11 +278,83 @@ class GhostOverlayComponent extends Container implements Focusable {
 			}
 		}
 
+		this.invalidateTranscriptCache();
+		if (this.followMode) this.scrollToBottom();
 		this.tui.requestRender();
+	}
+
+	invalidate(): void {
+		this.transcriptContainer.invalidate();
+		this.input.invalidate();
+		this.invalidateTranscriptCache();
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const innerW = Math.max(20, width - 2);
+		const totalHeight = this.getOverlayHeight();
+		const inputLines = this.input.render(innerW);
+		const chromeRows = 5 + inputLines.length;
+		const viewportRows = Math.max(4, totalHeight - chromeRows);
+		const transcriptLines = this.getTranscriptLines(innerW);
+		const maxScroll = Math.max(0, transcriptLines.length - viewportRows);
+
+		this.lastInnerWidth = innerW;
+
+		if (this.followMode) {
+			this.scrollOffset = maxScroll;
+		} else {
+			this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll));
+			if (this.scrollOffset >= maxScroll) this.scrollToBottom();
+		}
+
+		const visibleTranscript = transcriptLines.slice(this.scrollOffset, this.scrollOffset + viewportRows);
+		const scrollInfo = transcriptLines.length > viewportRows
+			? `${this.scrollOffset + 1}-${Math.min(this.scrollOffset + viewportRows, transcriptLines.length)}/${transcriptLines.length}`
+			: `${transcriptLines.length}L`;
+		const followIcon = this.followMode ? th.fg("success", "●") : th.fg("dim", "○");
+		const footer = truncateToWidth(
+			`${th.fg("dim", this.statusText)} ${th.fg("border", "│")} ${th.fg("accent", this.modelLabel)} ${th.fg("border", "│")} ${th.fg("dim", formatGhostCwd(this.sessionCwd))} ${th.fg("border", "│")} ${th.fg("dim", scrollInfo)} ${followIcon}`,
+			innerW,
+		);
+		const headerContent = truncateToWidth(
+			th.fg("accent", ` ${th.bold("ghost pi")} `) + th.fg("dim", "same model • ephemeral session • ↑↓ scroll • ctrl+s hide • esc close"),
+			innerW,
+		);
+		const headerPad = Math.max(0, innerW - visibleWidth(headerContent));
+		const lines: string[] = [];
+
+		lines.push(
+			th.fg("border", "╭") +
+			headerContent +
+			th.fg("border", "─".repeat(headerPad)) +
+			th.fg("border", "╮"),
+		);
+		lines.push(th.fg("border", "├" + "─".repeat(innerW) + "┤"));
+
+		for (const line of visibleTranscript) {
+			const padded = line + " ".repeat(Math.max(0, innerW - visibleWidth(line)));
+			lines.push(th.fg("border", "│") + padded + th.fg("border", "│"));
+		}
+		for (let i = visibleTranscript.length; i < viewportRows; i++) {
+			lines.push(th.fg("border", "│") + " ".repeat(innerW) + th.fg("border", "│"));
+		}
+
+		lines.push(th.fg("border", "├" + "─".repeat(innerW) + "┤"));
+		lines.push(th.fg("border", "│") + footer + " ".repeat(Math.max(0, innerW - visibleWidth(footer))) + th.fg("border", "│"));
+		for (const line of inputLines) {
+			const padded = line + " ".repeat(Math.max(0, innerW - visibleWidth(line)));
+			lines.push(th.fg("border", "│") + padded + th.fg("border", "│"));
+		}
+		lines.push(th.fg("border", "╰" + "─".repeat(innerW) + "╯"));
+
+		return lines;
 	}
 }
 
-function extractMessageText(message: { content: Array<{ type: string; text?: string }> }): string {
+function extractMessageText(message: { content: string | Array<{ type: string; text?: string }> }): string {
+	if (typeof message.content === "string") return message.content.trim();
+
 	return message.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
 		.map((part) => part.text)
@@ -208,8 +362,18 @@ function extractMessageText(message: { content: Array<{ type: string; text?: str
 		.trim();
 }
 
+function formatGhostCwd(cwd: string): string {
+	const home = process.env.HOME;
+	if (home && cwd.startsWith(home)) {
+		return `~${cwd.slice(home.length)}` || "~";
+	}
+	return cwd;
+}
+
 export default function (pi: ExtensionAPI) {
 	let ghostSession: AgentSession | null = null;
+	let ghostSessionCwd: string | null = null;
+	let ghostModelLabel: string | null = null;
 	let overlayHandle: OverlayHandle | null = null;
 	let overlayClosed = false;
 
@@ -227,6 +391,8 @@ export default function (pi: ExtensionAPI) {
 			ghostSession.dispose();
 			ghostSession = null;
 		}
+		ghostSessionCwd = null;
+		ghostModelLabel = null;
 		ctx?.ui.setWidget("pi-ghost", undefined);
 	};
 
@@ -260,6 +426,8 @@ export default function (pi: ExtensionAPI) {
 			sessionManager: SessionManager.inMemory(ctx.cwd),
 		});
 		ghostSession = result.session;
+		ghostSessionCwd = ctx.cwd;
+		ghostModelLabel = ctx.model.id;
 		return ghostSession;
 	};
 
@@ -274,6 +442,8 @@ export default function (pi: ExtensionAPI) {
 						tui,
 						theme,
 						keybindings,
+						ghostSessionCwd ?? ctx.cwd,
+						ghostModelLabel ?? ctx.model?.id ?? "unknown-model",
 						(text) => {
 							void session.prompt(text, { images: [] });
 						},
