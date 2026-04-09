@@ -1,6 +1,6 @@
 # pi-herdr
 
-Herdr-native pane, tab, and workspace orchestration for [pi](https://github.com/badlogic/pi-mono). Run commands in sibling panes, read output, wait for readiness, coordinate with other agents, and organize work across tabs and workspaces without falling back to tmux choreography.
+Herdr-native pane, tab, and workspace orchestration for [pi](https://github.com/badlogic/pi-mono). Run commands in existing or new panes, read output, wait for readiness, coordinate with other agents, and organize work across tabs and workspaces without falling back to tmux choreography.
 
 ## Install
 
@@ -30,11 +30,11 @@ Gives the agent a `herdr` tool with these actions:
 | **tab_create** | Create a tab |
 | **tab_focus** | Focus a tab |
 | **focus** | Focus a workspace, tab, or the tab containing a pane |
-| **run** | Split a sibling pane and run a command there |
+| **run** | Submit a line atomically with Enter in an existing pane, or create a new managed pane and submit it there |
 | **read** | Read output from a pane |
 | **watch** | Wait until pane output matches text or regex |
-| **wait_agent** | Wait until another agent pane reaches a specific status |
-| **send** | Send literal text or keys to a pane |
+| **wait_agent** | Wait until one or more agent panes reach one or more target statuses |
+| **send** | Send raw text or keys to a pane without implicit Enter |
 | **stop** | Close a pane |
 
 ## Why this exists
@@ -55,12 +55,16 @@ That means the agent can do higher-level pane workflows with fewer brittle steps
 ## Defaults and behavior
 
 - The extension returns early unless `HERDR_ENV` exists and `HERDR_PANE_ID` is present, so the `herdr` tool is not registered at all outside herdr
-- Panes can be referenced by friendly aliases like `server` or `tests`, or directly by real herdr pane ids
+- Pane actions target pane identity. Use friendly aliases like `server` or `tests`, or real herdr pane ids from create/list results
 - Alias state is stored in tool result details and reconstructed on session load and branch changes
-- First worker pane splits to the right of the current pane
-- Additional worker panes stack downward below the most recently created managed pane
+- The extension preserves current focus by default. Creation and run flows stay in the current UI context unless `focus: true` is passed explicitly.
+- `workspace_create` and `tab_create` use herdr's returned `root_pane` when available, with a pane-list fallback for older herdr versions
+- `run` uses an existing pane when the alias or pane id already exists
+- `run` creates a new managed pane only when the alias does not exist yet
+- First new worker pane splits to the right of the current pane
+- Additional new worker panes stack downward below the most recently created managed pane
 - `watch` uses `herdr wait output`
-- `wait_agent` uses `herdr wait agent-status`
+- `wait_agent` uses herdr agent status information and can coordinate one pane or many panes
 - `read` and `watch` support `visible`, `recent`, and `recent-unwrapped`
 
 ## Agent status semantics
@@ -81,7 +85,7 @@ Important workflow tips:
 
 ## Starting another pi cleanly
 
-A good pattern for a fresh sibling agent is:
+A good pattern for a fresh agent in another pane is:
 
 ```json
 { "action": "run", "pane": "reviewer", "command": "pi --no-session --model openai-codex/gpt-5.4-mini" }
@@ -91,7 +95,7 @@ If model choice matters and the user has not specified one, the agent should ask
 
 ## Example workflows
 
-Run a server in a sibling pane:
+Run a server in a new managed pane:
 
 ```json
 { "action": "run", "pane": "server", "command": "bun run dev" }
@@ -109,16 +113,28 @@ Read recent unwrapped logs:
 { "action": "read", "pane": "server", "source": "recent-unwrapped", "lines": 40 }
 ```
 
-Create a tab and remember its root pane:
+Create a labeled tab and remember its returned root pane:
 
 ```json
-{ "action": "tab_create", "workspace": "1", "pane": "reviewer" }
+{ "action": "tab_create", "workspace": "1", "label": "review", "pane": "reviewer" }
+```
+
+Run in that existing root pane:
+
+```json
+{ "action": "run", "pane": "reviewer", "command": "pi --no-session" }
 ```
 
 Wait for another agent to finish in the same sense the UI shows:
 
 ```json
 { "action": "wait_agent", "pane": "reviewer", "status": "done", "timeout": 300000 }
+```
+
+Wait until a whole set of panes has settled into idle or done:
+
+```json
+{ "action": "wait_agent", "panes": ["pi-00f", "pi-010", "pi-016"], "statuses": ["idle", "done"], "mode": "all", "timeout": 300000 }
 ```
 
 Focus the tab containing an existing pane id:
@@ -139,8 +155,13 @@ List workspaces and tabs:
 
 ## Notes for agents
 
-- `run` still defaults to creating a sibling pane and keeping focus on the current pane. Pass `focus: true` if you want the new pane's tab active immediately.
-- `tab_create` and `workspace_create` can also take `focus: false` to preserve the current context.
+- `run`, `read`, `watch`, `wait_agent`, `send`, and `stop` target panes only. Do not pass tab ids to those actions.
+- `wait_agent` accepts either `pane`/`status` for single-pane waits or `panes`/`statuses` for multi-pane waits. Use `mode: "all"` or `mode: "any"` to control how multi-pane waits resolve.
+- `run` is the default way to submit a line or prompt to a pane because it sends text and Enter atomically.
+- `send` is low-level input only. It does not press Enter. If you want text plus Enter as one action, use `run` instead of `send` + `Enter`.
+- `run` targets an existing pane when the alias or pane id already exists.
+- `run` creates a new sibling pane when the alias does not exist yet. It preserves current focus unless `focus: true` is passed explicitly.
+- `tab_create` and `workspace_create` accept `label` and preserve current focus unless `focus: true` is passed explicitly.
 - If you already know a real pane id from `list` or another herdr response, you can use it directly in `read`, `watch`, `wait_agent`, `send`, `stop`, or `focus`, even outside the alias map.
 - Herdr does not currently expose direct pane focus. `focus` with a pane id focuses the pane's tab.
 
