@@ -8,6 +8,7 @@ Extensions for [pi](https://github.com/badlogic/pi-mono), the terminal-based cod
 | [pi-ghostty-theme-sync](packages/pi-ghostty-theme-sync) | Sync pi theme with Ghostty terminal colors |
 | [pi-goal](packages/pi-goal) | Break work into tasks, spawn parallel worker agents |
 | [pi-handoff](packages/pi-handoff) | Transfer context to a new session with full briefing |
+| [pi-herdr](packages/pi-herdr) | Herdr-native pane, tab, and workspace orchestration for long-running workflows |
 | [pi-minimal-footer](packages/pi-minimal-footer) | Minimal footer with context gauge and subscription usage bars |
 | [pi-session-recall](packages/pi-session-recall) | Search and query past sessions — "remember when we tried X?" |
 | [pi-sketch](packages/pi-sketch) | Visual sketching in the terminal |
