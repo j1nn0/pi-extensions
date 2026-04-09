@@ -9,7 +9,7 @@
  *   list  — list all managed panes
  *
  * Panes are tagged with @pi_name tmux user options for discovery.
- * The tool is disabled when not running inside tmux.
+ * The tool is disabled when not running inside tmux, or when pi is running inside herdr.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -45,18 +45,16 @@ function stripAnsi(text: string): string {
 
 export default function (pi: ExtensionAPI) {
 	const inTmux = !!process.env.TMUX;
+	const inHerdr = !!process.env.HERDR_ENV;
+	if (!inTmux || inHerdr) {
+		return;
+	}
+
 	let myPaneId: string | null = null;
 	let myWindowId: string | null = null;
 
 	// Discover our own pane/window/session on startup
 	pi.on("session_start", async () => {
-		if (!inTmux) {
-			// Disable the tmux tool
-			const active = pi.getActiveTools();
-			pi.setActiveTools(active.filter((t) => t !== "tmux"));
-			return;
-		}
-
 		try {
 			const result = await pi.exec("tmux", [
 				"display-message",
@@ -180,10 +178,6 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			if (!inTmux) {
-				throw new Error("Not running inside tmux.");
-			}
-
 			const { action } = params;
 
 			switch (action) {
