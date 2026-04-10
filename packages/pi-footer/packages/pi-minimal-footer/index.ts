@@ -783,7 +783,13 @@ export default function (pi: ExtensionAPI) {
    *  changed while the fetch was in flight. */
   function fetchUsage(modelProvider: string): void {
     const provider = detectProvider(modelProvider);
-    if (!provider) return;
+    if (!provider) {
+      activeProvider = null;
+      latestUsage = null;
+      stopRefreshTimer();
+      tuiRef?.requestRender();
+      return;
+    }
 
     activeProvider = provider;
 
