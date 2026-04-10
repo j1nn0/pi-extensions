@@ -65,6 +65,7 @@ That means the agent can do higher-level pane workflows with fewer brittle steps
 - Additional new worker panes stack downward below the most recently created managed pane
 - `watch` uses `herdr wait output`
 - `wait_agent` uses herdr agent status information and can coordinate one pane or many panes
+- `watch` and `wait_agent` forward pi's abort signal, so Escape cancels the wait
 - `read` and `watch` support `visible`, `recent`, and `recent-unwrapped`
 
 ## Agent status semantics

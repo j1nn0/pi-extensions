@@ -187,8 +187,30 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	async function execHerdr(args: string[]) {
-		const result = await pi.exec("herdr", args);
+	function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+		return signal?.aborted === true || (error instanceof Error && error.message === "Aborted");
+	}
+
+	async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+		if (signal?.aborted) throw new Error("Aborted");
+		await new Promise<void>((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				signal?.removeEventListener("abort", onAbort);
+				resolve();
+			}, ms);
+			const onAbort = () => {
+				clearTimeout(timeout);
+				reject(new Error("Aborted"));
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+		});
+	}
+
+	async function execHerdr(args: string[], signal?: AbortSignal) {
+		const result = await pi.exec("herdr", args, { signal });
+		if (signal?.aborted || result.killed) {
+			throw new Error("Aborted");
+		}
 		if (result.code !== 0) {
 			const message =
 				parseHerdrError(result.stderr) ||
@@ -199,8 +221,8 @@ export default function (pi: ExtensionAPI) {
 		return result;
 	}
 
-	async function execHerdrJson<T = any>(args: string[]): Promise<T> {
-		const result = await execHerdr(args);
+	async function execHerdrJson<T = any>(args: string[], signal?: AbortSignal): Promise<T> {
+		const result = await execHerdr(args, signal);
 		const stdout = result.stdout.trim();
 		if (!stdout) {
 			throw new Error(`Expected JSON output from herdr ${args.join(" ")}`);
@@ -217,62 +239,63 @@ export default function (pi: ExtensionAPI) {
 		return value as T;
 	}
 
-	async function execHerdrText(args: string[]): Promise<string> {
-		const result = await execHerdr(args);
+	async function execHerdrText(args: string[], signal?: AbortSignal): Promise<string> {
+		const result = await execHerdr(args, signal);
 		return result.stdout;
 	}
 
-	async function getCurrentPaneInfo(): Promise<PaneInfo> {
-		const response = await execHerdrJson<{ result: { pane: PaneInfo } }>(["pane", "get", currentPaneTarget]);
+	async function getCurrentPaneInfo(signal?: AbortSignal): Promise<PaneInfo> {
+		const response = await execHerdrJson<{ result: { pane: PaneInfo } }>(["pane", "get", currentPaneTarget], signal);
 		return response.result.pane;
 	}
 
-	async function getWorkspaceInfo(workspaceId: string): Promise<WorkspaceInfo> {
+	async function getWorkspaceInfo(workspaceId: string, signal?: AbortSignal): Promise<WorkspaceInfo> {
 		const response = await execHerdrJson<{ result: { workspace: WorkspaceInfo } }>([
 			"workspace",
 			"get",
 			workspaceId,
-		]);
+		], signal);
 		return response.result.workspace;
 	}
 
-	async function getWorkspaceList(): Promise<WorkspaceInfo[]> {
-		const response = await execHerdrJson<{ result: { workspaces: WorkspaceInfo[] } }>(["workspace", "list"]);
+	async function getWorkspaceList(signal?: AbortSignal): Promise<WorkspaceInfo[]> {
+		const response = await execHerdrJson<{ result: { workspaces: WorkspaceInfo[] } }>(["workspace", "list"], signal);
 		return response.result.workspaces || [];
 	}
 
-	async function getWorkspacePanes(workspaceId: string): Promise<PaneInfo[]> {
+	async function getWorkspacePanes(workspaceId: string, signal?: AbortSignal): Promise<PaneInfo[]> {
 		const response = await execHerdrJson<{ result: { panes: PaneInfo[] } }>([
 			"pane",
 			"list",
 			"--workspace",
 			workspaceId,
-		]);
+		], signal);
 		return response.result.panes || [];
 	}
 
-	async function getTabList(workspaceId?: string): Promise<TabInfo[]> {
+	async function getTabList(workspaceId?: string, signal?: AbortSignal): Promise<TabInfo[]> {
 		const args = ["tab", "list"];
 		if (workspaceId) args.push("--workspace", workspaceId);
-		const response = await execHerdrJson<{ result: { tabs: TabInfo[] } }>(args);
+		const response = await execHerdrJson<{ result: { tabs: TabInfo[] } }>(args, signal);
 		return response.result.tabs || [];
 	}
 
-	async function getPaneInfo(paneId: string): Promise<PaneInfo | null> {
+	async function getPaneInfo(paneId: string, signal?: AbortSignal): Promise<PaneInfo | null> {
 		try {
-			const response = await execHerdrJson<{ result: { pane: PaneInfo } }>(["pane", "get", paneId]);
+			const response = await execHerdrJson<{ result: { pane: PaneInfo } }>(["pane", "get", paneId], signal);
 			return response.result.pane;
-		} catch {
+		} catch (error) {
+			if (isAbortError(error, signal)) throw error;
 			return null;
 		}
 	}
 
-	async function resolveManagedPane(alias: string, workspaceId: string): Promise<ManagedPane | null> {
+	async function resolveManagedPane(alias: string, workspaceId: string, signal?: AbortSignal): Promise<ManagedPane | null> {
 		const managed = managedPanes.get(alias);
 		if (!managed) return null;
 		if (managed.workspaceId !== workspaceId) return null;
 
-		const pane = await getPaneInfo(managed.paneId);
+		const pane = await getPaneInfo(managed.paneId, signal);
 		if (!pane) {
 			forgetAlias(alias);
 			return null;
@@ -281,10 +304,14 @@ export default function (pi: ExtensionAPI) {
 		return managed;
 	}
 
-	async function resolvePaneRef(ref: string, workspaceId: string): Promise<{ pane: PaneInfo; alias?: string } | null> {
-		const managed = await resolveManagedPane(ref, workspaceId);
+	async function resolvePaneRef(
+		ref: string,
+		workspaceId: string,
+		signal?: AbortSignal,
+	): Promise<{ pane: PaneInfo; alias?: string } | null> {
+		const managed = await resolveManagedPane(ref, workspaceId, signal);
 		if (managed) {
-			const pane = await getPaneInfo(managed.paneId);
+			const pane = await getPaneInfo(managed.paneId, signal);
 			if (!pane) {
 				forgetAlias(ref);
 				return null;
@@ -292,15 +319,19 @@ export default function (pi: ExtensionAPI) {
 			return { pane, alias: ref };
 		}
 
-		const pane = await getPaneInfo(ref);
+		const pane = await getPaneInfo(ref, signal);
 		if (!pane) return null;
 		const alias = [...managedPanes.entries()].find(([, managedPane]) => managedPane.paneId === pane.pane_id)?.[0];
 		return { pane, alias };
 	}
 
-	async function findSplitTarget(currentPaneId: string, workspaceId: string): Promise<{ target: string; direction: "right" | "down" }> {
+	async function findSplitTarget(
+		currentPaneId: string,
+		workspaceId: string,
+		signal?: AbortSignal,
+	): Promise<{ target: string; direction: "right" | "down" }> {
 		for (const alias of [...aliasOrder].reverse()) {
-			const managed = await resolveManagedPane(alias, workspaceId);
+			const managed = await resolveManagedPane(alias, workspaceId, signal);
 			if (managed) {
 				return { target: managed.paneId, direction: "down" };
 			}
@@ -311,12 +342,13 @@ export default function (pi: ExtensionAPI) {
 	async function readPane(
 		paneId: string,
 		options: { source?: ReadSource; lines?: number; raw?: boolean },
+		signal?: AbortSignal,
 	): Promise<string> {
 		const args = ["pane", "read", paneId];
 		if (options.source) args.push("--source", options.source);
 		if (options.lines != null) args.push("--lines", String(options.lines));
 		if (options.raw) args.push("--raw");
-		return execHerdrText(args);
+		return execHerdrText(args, signal);
 	}
 
 	function formatReadOutput(output: string): string {
@@ -465,13 +497,13 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
-			const currentPane = await getCurrentPaneInfo();
+			const currentPane = await getCurrentPaneInfo(signal);
 			const currentPaneId = currentPane.pane_id;
 			const currentWorkspaceId = currentPane.workspace_id;
 
 			switch (params.action) {
 				case "list": {
-					const panes = await getWorkspacePanes(currentWorkspaceId);
+					const panes = await getWorkspacePanes(currentWorkspaceId, signal);
 					const aliasByPaneId = new Map<string, string>();
 					for (const [alias, managed] of managedPanes.entries()) {
 						if (managed.workspaceId === currentWorkspaceId) aliasByPaneId.set(managed.paneId, alias);
@@ -494,7 +526,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				case "workspace_list": {
-					const workspaces = await getWorkspaceList();
+					const workspaces = await getWorkspaceList(signal);
 					const text = workspaces.length
 						? workspaces.map(summarizeWorkspace).join("\n")
 						: "No workspaces.";
@@ -511,9 +543,10 @@ export default function (pi: ExtensionAPI) {
 					if (params.focus !== true) args.push("--no-focus");
 					const response = await execHerdrJson<{
 						result: { workspace: WorkspaceInfo; root_pane?: PaneInfo };
-					}>(args);
+					}>(args, signal);
 					const workspace = response.result.workspace;
-					const rootPane = response.result.root_pane ?? (await getWorkspacePanes(workspace.workspace_id))[0] ?? null;
+					const rootPane =
+						response.result.root_pane ?? (await getWorkspacePanes(workspace.workspace_id, signal))[0] ?? null;
 					if (params.pane && rootPane) {
 						recordAlias(params.pane, rootPane.pane_id, workspace.workspace_id);
 					}
@@ -540,7 +573,7 @@ export default function (pi: ExtensionAPI) {
 						"workspace",
 						"focus",
 						workspaceId,
-					]);
+					], signal);
 					return {
 						content: [{ type: "text", text: `Focused workspace '${response.result.workspace.label}'` }],
 						details: withSnapshot({ action: "workspace_focus", workspace: response.result.workspace }),
@@ -549,7 +582,7 @@ export default function (pi: ExtensionAPI) {
 
 				case "tab_list": {
 					const workspaceId = params.workspace ?? currentWorkspaceId;
-					const tabs = await getTabList(workspaceId);
+					const tabs = await getTabList(workspaceId, signal);
 					const text = tabs.length ? tabs.map(summarizeTab).join("\n") : "No tabs.";
 					return {
 						content: [{ type: "text", text }],
@@ -563,11 +596,11 @@ export default function (pi: ExtensionAPI) {
 					if (params.cwd) args.push("--cwd", params.cwd);
 					if (params.label) args.push("--label", params.label);
 					if (params.focus !== true) args.push("--no-focus");
-					const response = await execHerdrJson<{ result: { tab: TabInfo; root_pane?: PaneInfo } }>(args);
+					const response = await execHerdrJson<{ result: { tab: TabInfo; root_pane?: PaneInfo } }>(args, signal);
 					const tab = response.result.tab;
 					const rootPane =
 						response.result.root_pane ??
-						(await getWorkspacePanes(tab.workspace_id)).find((pane) => pane.tab_id === tab.tab_id) ??
+						(await getWorkspacePanes(tab.workspace_id, signal)).find((pane) => pane.tab_id === tab.tab_id) ??
 						null;
 					if (params.pane && rootPane) {
 						recordAlias(params.pane, rootPane.pane_id, tab.workspace_id);
@@ -588,7 +621,7 @@ export default function (pi: ExtensionAPI) {
 				case "tab_focus": {
 					const tabId = params.tab;
 					if (!tabId) throw new Error("'tab' is required for tab_focus");
-					const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", tabId]);
+					const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", tabId], signal);
 					return {
 						content: [{ type: "text", text: `Focused tab '${response.result.tab.label}'` }],
 						details: withSnapshot({ action: "tab_focus", tab: response.result.tab }),
@@ -597,7 +630,7 @@ export default function (pi: ExtensionAPI) {
 
 				case "focus": {
 					if (params.tab) {
-						const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", params.tab]);
+						const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", params.tab], signal);
 						return {
 							content: [{ type: "text", text: `Focused tab '${response.result.tab.label}'` }],
 							details: withSnapshot({ action: "focus", target: "tab", tab: response.result.tab }),
@@ -608,16 +641,16 @@ export default function (pi: ExtensionAPI) {
 							"workspace",
 							"focus",
 							params.workspace,
-						]);
+						], signal);
 						return {
 							content: [{ type: "text", text: `Focused workspace '${response.result.workspace.label}'` }],
 							details: withSnapshot({ action: "focus", target: "workspace", workspace: response.result.workspace }),
 						};
 					}
 					if (params.pane) {
-						const resolved = await resolvePaneRef(params.pane, currentWorkspaceId);
+						const resolved = await resolvePaneRef(params.pane, currentWorkspaceId, signal);
 						if (!resolved) throw new Error(`Pane '${params.pane}' not found in the current workspace.`);
-						const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", resolved.pane.tab_id]);
+						const response = await execHerdrJson<{ result: { tab: TabInfo } }>(["tab", "focus", resolved.pane.tab_id], signal);
 						return {
 							content: [{
 								type: "text",
@@ -636,7 +669,7 @@ export default function (pi: ExtensionAPI) {
 					if (!paneRef) throw new Error("'pane' is required for run");
 					if (!command) throw new Error("'command' is required for run");
 
-					let targetPane = await resolvePaneRef(paneRef, currentWorkspaceId);
+					let targetPane = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 					let created = false;
 					let splitDirection: "right" | "down" | undefined;
 
@@ -644,34 +677,38 @@ export default function (pi: ExtensionAPI) {
 						if (targetPane.pane.pane_id === currentPaneId) {
 							throw new Error("Refusing to restart the pane pi is running in.");
 						}
-						await execHerdr(["pane", "close", targetPane.pane.pane_id]);
+						await execHerdr(["pane", "close", targetPane.pane.pane_id], signal);
 						if (targetPane.alias) forgetAlias(targetPane.alias);
 						targetPane = null;
 					}
 
 					if (!targetPane) {
-						const autoTarget = await findSplitTarget(currentPaneId, currentWorkspaceId);
+						const autoTarget = await findSplitTarget(currentPaneId, currentWorkspaceId, signal);
 						const splitTarget = params.direction ? currentPaneId : autoTarget.target;
 						splitDirection = params.direction || autoTarget.direction;
 						const splitArgs = ["pane", "split", splitTarget, "--direction", splitDirection];
 						if (params.focus !== true) splitArgs.push("--no-focus");
 						if (params.cwd) splitArgs.push("--cwd", params.cwd);
 
-						const split = await execHerdrJson<{ result: { pane: PaneInfo } }>(splitArgs);
+						const split = await execHerdrJson<{ result: { pane: PaneInfo } }>(splitArgs, signal);
 						const newPane = split.result.pane;
 						recordAlias(paneRef, newPane.pane_id, currentWorkspaceId);
 						targetPane = { pane: newPane, alias: paneRef };
 						created = true;
 					}
 
-					await execHerdr(["pane", "run", targetPane.pane.pane_id, command]);
+					await execHerdr(["pane", "run", targetPane.pane.pane_id, command], signal);
 
-					await new Promise((resolve) => setTimeout(resolve, 800));
-					const initialOutput = await readPane(targetPane.pane.pane_id, {
-						source: params.source ?? "recent",
-						lines: params.lines ?? 20,
-						raw: params.raw,
-					});
+					await sleep(800, signal);
+					const initialOutput = await readPane(
+						targetPane.pane.pane_id,
+						{
+							source: params.source ?? "recent",
+							lines: params.lines ?? 20,
+							raw: params.raw,
+						},
+						signal,
+					);
 
 					const paneLabel = targetPane.alias || paneRef;
 					return {
@@ -698,14 +735,18 @@ export default function (pi: ExtensionAPI) {
 					const paneRef = params.pane;
 					if (!paneRef) throw new Error("'pane' is required for read");
 
-					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId);
+					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 					if (!resolved) throw new Error(`Pane '${paneRef}' not found in the current workspace.`);
 
-					const output = await readPane(resolved.pane.pane_id, {
-						source: params.source ?? "recent",
-						lines: params.lines ?? 20,
-						raw: params.raw,
-					});
+					const output = await readPane(
+						resolved.pane.pane_id,
+						{
+							source: params.source ?? "recent",
+							lines: params.lines ?? 20,
+							raw: params.raw,
+						},
+						signal,
+					);
 
 					return {
 						content: [{ type: "text", text: formatReadOutput(output) }],
@@ -725,7 +766,7 @@ export default function (pi: ExtensionAPI) {
 					if (!paneRef) throw new Error("'pane' is required for watch");
 					if (!match) throw new Error("'match' is required for watch");
 
-					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId);
+					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 					if (!resolved) throw new Error(`Pane '${paneRef}' not found in the current workspace.`);
 
 					const args = ["wait", "output", resolved.pane.pane_id, "--match", match];
@@ -743,7 +784,7 @@ export default function (pi: ExtensionAPI) {
 							matched_line: string;
 							read: PaneReadResult;
 						};
-					}>(args);
+					}>(args, signal);
 					const matched = response.result;
 					const text = matched.read?.text ? formatReadOutput(matched.read.text) : matched.matched_line;
 
@@ -770,7 +811,7 @@ export default function (pi: ExtensionAPI) {
 					const resolvedPanes: Array<{ pane: PaneInfo; aliasOrRef: string }> = [];
 					for (const paneRef of paneRefs) {
 						throwIfAborted(signal, "wait_agent");
-						const resolved = await resolvePaneRef(paneRef, currentWorkspaceId);
+						const resolved = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 						if (!resolved) throw new Error(`Pane '${paneRef}' not found in the current workspace.`);
 						resolvedPanes.push({
 							pane: resolved.pane,
@@ -791,7 +832,7 @@ export default function (pi: ExtensionAPI) {
 						snapshot = [];
 						for (const resolved of resolvedPanes) {
 							throwIfAborted(signal, "wait_agent");
-							const pane = await getPaneInfo(resolved.pane.pane_id);
+							const pane = await getPaneInfo(resolved.pane.pane_id, signal);
 							if (!pane) throw new Error(`Pane '${resolved.aliasOrRef}' no longer exists.`);
 							snapshot.push({
 								pane: resolved.aliasOrRef,
@@ -840,15 +881,15 @@ export default function (pi: ExtensionAPI) {
 					if (!paneRef) throw new Error("'pane' is required for send");
 					if (!params.text && !params.keys) throw new Error("'text' or 'keys' is required for send");
 
-					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId);
+					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 					if (!resolved) throw new Error(`Pane '${paneRef}' not found in the current workspace.`);
 
 					if (params.text) {
-						await execHerdr(["pane", "send-text", resolved.pane.pane_id, params.text]);
+						await execHerdr(["pane", "send-text", resolved.pane.pane_id, params.text], signal);
 					}
 					if (params.keys) {
 						const keys = params.keys.split(/\s+/).filter(Boolean);
-						await execHerdr(["pane", "send-keys", resolved.pane.pane_id, ...keys]);
+						await execHerdr(["pane", "send-keys", resolved.pane.pane_id, ...keys], signal);
 					}
 
 					const desc = [params.text && `"${params.text}"`, params.keys].filter(Boolean).join(" + ");
@@ -869,13 +910,13 @@ export default function (pi: ExtensionAPI) {
 					const paneRef = params.pane;
 					if (!paneRef) throw new Error("'pane' is required for stop");
 
-					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId);
+					const resolved = await resolvePaneRef(paneRef, currentWorkspaceId, signal);
 					if (!resolved) throw new Error(`Pane '${paneRef}' not found in the current workspace.`);
 					if (resolved.pane.pane_id === currentPaneId) {
 						throw new Error("Refusing to close the pane pi is running in.");
 					}
 
-					await execHerdr(["pane", "close", resolved.pane.pane_id]);
+					await execHerdr(["pane", "close", resolved.pane.pane_id], signal);
 					if (resolved.alias) forgetAlias(resolved.alias);
 
 					return {
