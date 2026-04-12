@@ -80,6 +80,7 @@ const ActionEnum = StringEnum(
 		"tab_create",
 		"tab_focus",
 		"focus",
+		"pane_split",
 		"run",
 		"read",
 		"watch",
@@ -96,6 +97,10 @@ const StatusEnum = StringEnum(["idle", "working", "blocked", "done", "unknown"] 
 
 const SourceEnum = StringEnum(["visible", "recent", "recent-unwrapped"] as const, {
 	description: "Read source for read/watch",
+});
+
+const DirectionEnum = StringEnum(["right", "down"] as const, {
+	description: "Split direction for pane_split",
 });
 
 const WaitModeEnum = StringEnum(["all", "any"] as const, {
@@ -446,19 +451,19 @@ export default function (pi: ExtensionAPI) {
 		label: "herdr",
 		description:
 			"Herdr-native pane orchestration for long-running workflows. " +
-			"Actions: list panes, manage workspaces and tabs, submit lines atomically in existing panes, read output, watch readiness, wait for one or more agent panes to reach target statuses, send raw text or keys, focus contexts, and stop panes.",
+			"Actions: list panes, manage workspaces and tabs, split existing panes, submit lines atomically in existing panes, read output, watch readiness, wait for one or more agent panes to reach target statuses, send raw text or keys, focus contexts, and stop panes.",
 		promptGuidelines: [
 			"Use `herdr` run for long-running processes in other panes instead of `bash`.",
 			"When you want to submit a line or prompt to a pane, prefer `run` over `send` + `Enter` so text and Enter happen atomically.",
 			"Use `send` only for low-level literal text or key injection when you do not want command-style submission semantics.",
 			"Preserve the current UI focus by default. Do not change workspace or tab focus unless the user explicitly asks or the workflow truly requires visible interaction there.",
-			"Pane actions like run, read, watch, wait_agent, send, and stop must target pane aliases or pane ids, not tab ids.",
-			"Use `herdr` workspace and tab actions to organize parallel work instead of piling everything into one pane stack.",
+			"Pane actions like pane_split, run, read, watch, wait_agent, send, and stop must target pane aliases or pane ids, not tab ids.",
+			"Use `herdr` workspace, tab, and pane_split actions to organize parallel work instead of piling everything into one pane stack.",
 			"Use `herdr` watch for log/output conditions like server readiness, test completion, or regex matches.",
 			"Use `herdr` wait_agent with agent statuses. It can wait on one pane or a set of panes, and background finished panes usually become `done` while focused finished panes usually become `idle`.",
 			"Use `recent-unwrapped` when you need log matching or reads that ignore soft wrapping.",
 			"Pane references can be either friendly aliases you created earlier or real herdr pane ids from `list`.",
-			"Use `tab_create` or `workspace_create` to establish new pane targets. `run` only works with an existing pane alias or pane id.",
+			"Use `pane_split`, `tab_create`, or `workspace_create` to establish new pane targets. `run` only works with an existing pane alias or pane id.",
 			"Use friendly pane aliases like `server`, `reviewer`, or `tests` so later reads, watches, and sends can reuse them across the session.",
 			"When starting a fresh pi instance in another pane and the model matters, either specify `--model` explicitly or ask the user which model/provider they want.",
 		],
@@ -469,6 +474,8 @@ export default function (pi: ExtensionAPI) {
 			workspace: Type.Optional(Type.String({ description: "Workspace id for workspace or tab actions" })),
 			tab: Type.Optional(Type.String({ description: "Tab id for tab actions or focus(tab) only. Pane actions must use pane ids or aliases." })),
 			label: Type.Optional(Type.String({ description: "Workspace or tab label for create actions" })),
+			newPane: Type.Optional(Type.String({ description: "Alias to remember for the pane created by pane_split" })),
+			direction: Type.Optional(DirectionEnum),
 			command: Type.Optional(Type.String({ description: "Line to submit atomically with Enter (for run action)" })),
 			match: Type.Optional(Type.String({ description: "Text or regex to wait for (for watch action)" })),
 			regex: Type.Optional(Type.Boolean({ description: "Treat match as a regex (for watch action)" })),
@@ -652,6 +659,43 @@ export default function (pi: ExtensionAPI) {
 						};
 					}
 					throw new Error("'workspace', 'tab', or 'pane' is required for focus");
+				}
+
+				case "pane_split": {
+					rejectUnexpectedParams("pane_split", params, ["workspace", "tab"]);
+					const paneRef = params.pane;
+					const direction = params.direction;
+					if (!paneRef) throw new Error("'pane' is required for pane_split");
+					if (!direction) throw new Error("'direction' is required for pane_split");
+
+					const sourcePane = await requirePaneRef(paneRef, currentWorkspaceId, signal);
+					const args = ["pane", "split", sourcePane.pane.pane_id, "--direction", direction];
+					if (params.cwd) args.push("--cwd", params.cwd);
+					if (params.focus !== true) args.push("--no-focus");
+
+					const response = await execHerdrJson<{ result: { pane: PaneInfo } }>(args, signal);
+					const splitPane = response.result.pane;
+					if (params.newPane) {
+						recordAlias(params.newPane, splitPane.pane_id, splitPane.workspace_id);
+					}
+
+					const sourceLabel = sourcePane.alias || paneRef;
+					const aliasText = params.newPane ? `, aliased as '${params.newPane}'` : "";
+					return {
+						content: [{
+							type: "text",
+							text: `Created pane '${splitPane.pane_id}' by splitting '${sourceLabel}' ${direction}${aliasText}`,
+						}],
+						details: withSnapshot({
+							action: "pane_split",
+							pane: sourceLabel,
+							paneId: sourcePane.pane.pane_id,
+							newPane: params.newPane || splitPane.pane_id,
+							newPaneId: splitPane.pane_id,
+							direction,
+							workspaceId: splitPane.workspace_id,
+						}),
+					};
 				}
 
 				case "run": {
@@ -899,7 +943,9 @@ export default function (pi: ExtensionAPI) {
 			if (args.tab) text += theme.fg("muted", ` ${args.tab}`);
 			if (args.pane) text += theme.fg("muted", ` ${args.pane}`);
 			if (Array.isArray(args.panes) && args.panes.length) text += theme.fg("muted", ` ${args.panes.join(",")}`);
+			if (args.direction) text += theme.fg("dim", ` › ${args.direction}`);
 			if (args.command) text += theme.fg("dim", ` › ${args.command}`);
+			if (args.newPane) text += theme.fg("muted", ` ${args.newPane}`);
 			if (args.match) text += theme.fg("dim", ` › ${args.match}`);
 			if (args.status) text += theme.fg("dim", ` › ${args.status}`);
 			if (Array.isArray(args.statuses) && args.statuses.length) text += theme.fg("dim", ` › ${args.statuses.join("|")}`);
@@ -917,6 +963,11 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			switch (details.action) {
+				case "pane_split": {
+					let text = theme.fg("accent", `▥ ${details.newPane || details.newPaneId}`);
+					text += theme.fg("dim", ` ‹ ${details.direction} from ${details.pane}`);
+					return new Text(text, 0, 0);
+				}
 				case "run": {
 					let text = theme.fg("success", `▶ ${details.pane}`);
 					text += theme.fg("dim", ` › ${details.command}`);

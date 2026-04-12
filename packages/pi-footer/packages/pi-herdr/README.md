@@ -30,6 +30,7 @@ Gives the agent a `herdr` tool with these actions:
 | **tab_create** | Create a tab |
 | **tab_focus** | Focus a tab |
 | **focus** | Focus a workspace, tab, or the tab containing a pane |
+| **pane_split** | Split an existing pane and optionally alias the new pane |
 | **run** | Submit a line atomically with Enter in an existing pane |
 | **read** | Read output from a pane |
 | **watch** | Wait until pane output matches text or regex |
@@ -58,6 +59,7 @@ That means the agent can do higher-level pane workflows with fewer brittle steps
 - Pane actions target pane identity. Use friendly aliases like `server` or `tests`, or real herdr pane ids from create/list results
 - Alias state is stored in tool result details and reconstructed on session load and branch changes
 - The extension preserves current focus by default. Creation flows stay in the current UI context unless `focus: true` is passed explicitly.
+- `pane_split` creates a sibling pane from an existing pane in the current workspace and can remember it under `newPane`
 - `workspace_create` and `tab_create` use herdr's returned `root_pane` when available, with a pane-list fallback for older herdr versions
 - `run` only targets an existing pane alias or real pane id
 - If an alias no longer points to a live pane, the extension removes it and returns an error
@@ -84,7 +86,7 @@ Important workflow tips:
 
 ## Starting another pi cleanly
 
-A good pattern for a fresh agent in another pane is to create a tab or workspace root pane, alias it, then run in that existing pane:
+A good pattern for a fresh agent in another pane is to create a tab or workspace root pane, or split an existing pane, alias it, then run in that existing pane:
 
 ```json
 { "action": "tab_create", "label": "review", "pane": "reviewer" }
@@ -97,6 +99,12 @@ A good pattern for a fresh agent in another pane is to create a tab or workspace
 If model choice matters and the user has not specified one, the agent should ask which model/provider to use.
 
 ## Example workflows
+
+Split an existing pane and remember the new sibling pane as `reviewer`:
+
+```json
+{ "action": "pane_split", "pane": "server", "direction": "right", "newPane": "reviewer" }
+```
 
 Create a tab and remember its root pane as `server`:
 
@@ -164,12 +172,13 @@ List workspaces and tabs:
 
 ## Notes for agents
 
-- `run`, `read`, `watch`, `wait_agent`, `send`, and `stop` target panes only. Do not pass tab ids to those actions.
+- `pane_split`, `run`, `read`, `watch`, `wait_agent`, `send`, and `stop` target panes only. Do not pass tab ids to those actions.
 - `wait_agent` accepts either `pane`/`status` for single-pane waits or `panes`/`statuses` for multi-pane waits. Use `mode: "all"` or `mode: "any"` to control how multi-pane waits resolve.
 - `run` is the default way to submit a line or prompt to a pane because it sends text and Enter atomically.
 - `send` is low-level input only. It does not press Enter. If you want text plus Enter as one action, use `run` instead of `send` + `Enter`.
 - `run` only targets an existing pane. It never creates or restarts panes.
 - If an alias is stale, the extension removes it and returns an error.
+- `pane_split` requires `pane` and `direction`, accepts `newPane`, `cwd`, and `focus`, and returns the created pane.
 - `tab_create` and `workspace_create` accept `label` and preserve current focus unless `focus: true` is passed explicitly.
 - If you already know a real pane id from `list` or another herdr response, you can use it directly in `run`, `read`, `watch`, `wait_agent`, `send`, `stop`, or `focus`, even outside the alias map.
 - Herdr does not currently expose direct pane focus. `focus` with a pane id focuses the pane's tab.
