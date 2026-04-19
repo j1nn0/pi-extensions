@@ -35,7 +35,6 @@ interface GitCache {
   dirty: boolean;
   ahead: number;
   behind: number;
-  isJj: boolean;
 }
 
 // ============ Usage Cache ============
@@ -51,63 +50,58 @@ let codexEmailPrefix: string | null | undefined; // undefined = not yet resolved
 
 let gitCache: GitCache | null = null;
 
-function refreshGitCache(): void {
-  gitCache = null;
+function parseGitStatus(output: string): GitCache {
+  let branch: string | null = null;
+  let dirty = false;
+  let ahead = 0;
+  let behind = 0;
 
-  try {
-    const gitRoot = execSync("git rev-parse --show-toplevel 2>/dev/null", {
-      encoding: "utf8",
-      timeout: 500,
-    }).trim();
+  for (const line of output.split("\n")) {
+    if (!line) continue;
 
-    if (!gitRoot) return;
-
-    const isJj = existsSync(`${gitRoot}/.jj`);
-    let branch: string | null = null;
-
-    if (isJj) {
-      try {
-        const jjBranch = execSync(
-          `jj log -r 'heads(ancestors(@) & bookmarks())' --no-graph -T 'bookmarks.map(|b| b.name()).join(" ")' --limit 1 2>/dev/null`,
-          { encoding: "utf8", timeout: 1000 }
-        ).trim();
-        branch = jjBranch ? jjBranch.split(" ")[0] : null;
-      } catch {}
-    } else {
-      try {
-        const gitBranch = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
-          encoding: "utf8",
-          timeout: 500,
-        }).trim();
-        branch = gitBranch && gitBranch !== "HEAD" ? gitBranch : null;
-      } catch {}
+    if (line.startsWith("# branch.head ")) {
+      const head = line.slice("# branch.head ".length).trim();
+      branch = head && head !== "(detached)" ? head : null;
+      continue;
     }
 
-    let dirty = false;
-    try {
-      const status = execSync("git status --porcelain 2>/dev/null", {
-        encoding: "utf8",
-        timeout: 500,
-      });
-      dirty = status.trim().length > 0;
-    } catch {}
+    if (line.startsWith("# branch.ab ")) {
+      const match = line.match(/^# branch\.ab \+(\d+) -(\d+)$/);
+      if (match) {
+        ahead = parseInt(match[1], 10) || 0;
+        behind = parseInt(match[2], 10) || 0;
+      }
+      continue;
+    }
 
-    let ahead = 0;
-    let behind = 0;
-    try {
-      const counts = execSync("git rev-list --left-right --count HEAD...@{upstream} 2>/dev/null", {
-        encoding: "utf8",
-        timeout: 500,
-      }).trim();
-      const [a, b] = counts.split(/\s+/);
-      ahead = parseInt(a, 10) || 0;
-      behind = parseInt(b, 10) || 0;
-    } catch {}
-
-    gitCache = { branch, dirty, ahead, behind, isJj };
-  } catch {
-    gitCache = null;
+    if (!line.startsWith("# ")) dirty = true;
   }
+
+  return { branch, dirty, ahead, behind };
+}
+
+function sameGitCache(a: GitCache | null, b: GitCache | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.branch === b.branch && a.dirty === b.dirty && a.ahead === b.ahead && a.behind === b.behind;
+}
+
+function refreshGitCache(): boolean {
+  let next: GitCache | null = null;
+
+  try {
+    const status = execSync("git status --porcelain=v2 --branch 2>/dev/null", {
+      encoding: "utf8",
+      timeout: 1000,
+    });
+    next = parseGitStatus(status.trimEnd());
+  } catch {
+    next = null;
+  }
+
+  const changed = !sameGitCache(gitCache, next);
+  gitCache = next;
+  return changed;
 }
 
 // ============ JWT Helpers ============
@@ -778,6 +772,10 @@ export default function (pi: ExtensionAPI) {
   // Store tui reference for triggering re-renders from event handlers
   let tuiRef: { requestRender: () => void } | null = null;
 
+  function refreshGitFooter(): void {
+    if (refreshGitCache()) tuiRef?.requestRender();
+  }
+
   /** Fetch usage for the active provider. Shows cached data immediately,
    *  then fetches fresh in the background. Discards results if provider
    *  changed while the fetch was in flight. */
@@ -848,8 +846,7 @@ export default function (pi: ExtensionAPI) {
       tuiRef = tui;
       
       const unsub = footerData.onBranchChange(() => {
-        refreshGitCache();
-        tui.requestRender();
+        refreshGitFooter();
       });
 
       // Initial fetch inside factory — tui is guaranteed available here,
@@ -934,6 +931,10 @@ export default function (pi: ExtensionAPI) {
       };
     });
 
+  });
+
+  pi.on("turn_end", async () => {
+    refreshGitFooter();
   });
 
   // Refresh when model changes — fetch immediately, restart timer

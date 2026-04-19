@@ -11,7 +11,7 @@ Minimal footer for [pi](https://github.com/badlogic/pi-mono) that replaces the d
 - **Context gauge** — working directory, git branch, model, thinking level, and context window usage with token counts
 - **Subscription usage bars** — rolling window quotas with reset timers for supported providers
 - **Auto-refresh** — fetches usage on startup and model switch, then every 5 minutes
-- **Git integration** — branch name, dirty state, ahead/behind counts (supports jj)
+- **Git integration** — branch name, dirty state, ahead/behind counts
 
 ## Supported providers
 
@@ -38,6 +38,11 @@ Usage is fetched:
 - Once on startup
 - Immediately on model switch (Ctrl+P)
 - Every 5 minutes after that
+
+Git state is refreshed:
+- Once on startup
+- When pi reports a branch change
+- At the end of each turn
 
 The footer adapts to narrow terminals by stacking lines vertically instead of the single-line wide layout.
 
