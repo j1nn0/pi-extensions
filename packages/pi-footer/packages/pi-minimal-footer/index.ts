@@ -669,10 +669,54 @@ export default function (pi: ExtensionAPI) {
     return `${tokens}`;
   }
 
-  function renderContextGauge(percentage: number, theme: any, used?: number, total?: number): string {
+  function fitFooterSegment(width: number, variants: string[]): string {
+    const safeWidth = Math.max(1, width);
+
+    for (const variant of variants) {
+      if (visibleWidth(variant) <= safeWidth) return variant;
+    }
+
+    return truncateToWidth(variants[variants.length - 1] || "", safeWidth);
+  }
+
+  function wrapFooterSegments(segments: string[], width: number, sep: string): string[] {
+    const safeWidth = Math.max(1, width);
+    const lines: string[] = [];
+    let current = "";
+
+    for (const segment of segments.filter(Boolean)) {
+      const fitted = truncateToWidth(segment, safeWidth);
+
+      if (!current) {
+        current = fitted;
+        continue;
+      }
+
+      const candidate = current + sep + fitted;
+      if (visibleWidth(candidate) <= safeWidth) {
+        current = candidate;
+        continue;
+      }
+
+      lines.push(truncateToWidth(current, safeWidth));
+      current = fitted;
+    }
+
+    if (current) lines.push(truncateToWidth(current, safeWidth));
+    return lines;
+  }
+
+  function renderContextGauge(
+    percentage: number,
+    theme: any,
+    used?: number,
+    total?: number,
+    options?: { barWidth?: number; includeCounts?: boolean }
+  ): string {
+    const barWidth = Math.max(4, options?.barWidth ?? CTX_GAUGE_WIDTH);
     const clamped = Math.max(0, Math.min(100, percentage));
-    const filled = Math.round((clamped / 100) * CTX_GAUGE_WIDTH);
-    const empty = CTX_GAUGE_WIDTH - filled;
+    const filled = Math.round((clamped / 100) * barWidth);
+    const empty = barWidth - filled;
 
     let color: string;
     if (clamped >= 90) color = "error";
@@ -682,7 +726,10 @@ export default function (pi: ExtensionAPI) {
 
     const bar = theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(empty));
     const pct = `${Math.round(clamped)}%`;
-    const counts = used !== undefined && total ? ` ${formatTokenCount(used)}/${formatTokenCount(total)}` : "";
+    const counts =
+      options?.includeCounts === false || used === undefined || !total
+        ? ""
+        : ` ${formatTokenCount(used)}/${formatTokenCount(total)}`;
 
     return theme.fg("dim", "ctx ") + bar + " " + theme.fg("dim", pct + counts);
   }
@@ -700,38 +747,38 @@ export default function (pi: ExtensionAPI) {
     return theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(empty));
   }
 
+  function renderUsageWindow(
+    window: RateWindow,
+    theme: any,
+    options?: { barWidth?: number; includeReset?: boolean }
+  ): string {
+    const dim = (s: string) => theme.fg("dim", s);
+    const bar = renderUsageBar(window.usedPercent, Math.max(4, options?.barWidth ?? 10), theme);
+    const pct = dim(`${Math.round(window.usedPercent)}%`);
+    const timeStr = options?.includeReset === false || !window.resetsIn ? "" : " " + dim(window.resetsIn);
+    return `${dim(window.label)} ${bar} ${pct}${timeStr}`;
+  }
+
   function renderUsageLine(usage: UsageSnapshot, width: number, theme: any): string[] {
     if (!usage.windows.length) return [];
 
     const dim = (s: string) => theme.fg("dim", s);
     const sep = " " + dim(">") + " ";
-    const USAGE_BAR_WIDTH = 10;
-    const NARROW_THRESHOLD = 60;
-
-    if (width < NARROW_THRESHOLD) {
-      // Narrow: one line per window
-      const lines: string[] = [];
-      for (const w of usage.windows) {
-        const bar = renderUsageBar(w.usedPercent, USAGE_BAR_WIDTH, theme);
-        const pct = dim(`${Math.round(w.usedPercent)}%`);
-        const timeStr = w.resetsIn ? " " + dim(w.resetsIn) : "";
-        lines.push(`${dim(w.label)} ${bar} ${pct}${timeStr}`);
-      }
-      return lines;
-    }
-
-    // Wide: single line with > separators, fixed-width bars
-    // Format: "Codex > 5h ━━━━━━━━━━ 46% 2h38m > 7d ━━━━━━━━━━ 46% 2d1h"
-    const parts: string[] = [theme.fg("accent", usage.provider)];
+    const segments: string[] = [theme.fg("accent", usage.provider)];
 
     for (const w of usage.windows) {
-      const bar = renderUsageBar(w.usedPercent, USAGE_BAR_WIDTH, theme);
-      const pct = dim(`${Math.round(w.usedPercent)}%`);
-      const timeStr = w.resetsIn ? " " + dim(w.resetsIn) : "";
-      parts.push(`${dim(w.label)} ${bar} ${pct}${timeStr}`);
+      segments.push(
+        fitFooterSegment(width, [
+          renderUsageWindow(w, theme, { barWidth: 10, includeReset: true }),
+          renderUsageWindow(w, theme, { barWidth: 8, includeReset: true }),
+          renderUsageWindow(w, theme, { barWidth: 8, includeReset: false }),
+          renderUsageWindow(w, theme, { barWidth: 6, includeReset: false }),
+          renderUsageWindow(w, theme, { barWidth: 4, includeReset: false }),
+        ])
+      );
     }
 
-    return [parts.join(sep)];
+    return wrapFooterSegments(segments, width, sep);
   }
 
   function getThinkingLevel(ctx: any): string {
@@ -754,11 +801,10 @@ export default function (pi: ExtensionAPI) {
     const lastAssistant = messages
       .slice()
       .reverse()
-      .find((m: any) => m.role === "assistant" && m.stopReason !== "aborted");
+      .find((m: any) => m.role === "assistant" && m.stopReason !== "aborted") as any;
 
-    if (!lastAssistant?.usage) return { percentage: 0, used: 0, total: contextWindow };
-
-    const usage = lastAssistant.usage;
+    const usage = lastAssistant?.usage;
+    if (!usage) return { percentage: 0, used: 0, total: contextWindow };
     const contextTokens = (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
 
     return { percentage: (contextTokens / contextWindow) * 100, used: contextTokens, total: contextWindow };
@@ -884,7 +930,8 @@ export default function (pi: ExtensionAPI) {
 
           // Model + thinking
           const modelName = ctx.model?.id?.split("/").pop() || "no-model";
-          let modelStr = theme.fg("muted", modelName);
+          const plainModelStr = theme.fg("muted", modelName);
+          let modelStr = plainModelStr;
           if (ctx.model?.reasoning) {
             const thinkingLevel = getThinkingLevel(ctx);
             if (thinkingLevel !== "off") {
@@ -892,41 +939,43 @@ export default function (pi: ExtensionAPI) {
             }
           }
 
-          // Context gauge
-          const gauge = renderContextGauge(percentage, theme, ctxUsed, ctxTotal);
-
           const sep = " " + theme.fg("dim", ">") + " ";
-          const NARROW_THRESHOLD = 60;
-
           const lines: string[] = [];
+          const pwdStr = theme.fg("accent", pwd);
+          const statusBlocks = [
+            fitFooterSegment(width, branchStr ? [pwdStr + sep + branchStr, pwdStr] : [pwdStr]),
+            fitFooterSegment(width, modelStr === plainModelStr ? [plainModelStr] : [modelStr, plainModelStr]),
+            fitFooterSegment(width, [
+              renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
+                barWidth: CTX_GAUGE_WIDTH,
+                includeCounts: true,
+              }),
+              renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
+                barWidth: 10,
+                includeCounts: false,
+              }),
+              renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
+                barWidth: 8,
+                includeCounts: false,
+              }),
+              renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
+                barWidth: 6,
+                includeCounts: false,
+              }),
+              renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
+                barWidth: 4,
+                includeCounts: false,
+              }),
+            ]),
+          ];
 
-          if (width < NARROW_THRESHOLD) {
-            // Narrow: stack vertically
-            const pwdColored = theme.fg("accent", pwd);
-            if (branchStr) {
-              lines.push(truncateToWidth(pwdColored + sep + branchStr, width));
-            } else {
-              lines.push(truncateToWidth(pwdColored, width));
-            }
-            lines.push(truncateToWidth(modelStr, width));
-            lines.push(truncateToWidth(gauge, width));
-          } else {
-            // Wide: single line
-            const pwdColored = theme.fg("accent", pwd);
-            const branchPart = branchStr ? sep + branchStr : "";
-            const modelPart = sep + modelStr;
-            const gaugePart = sep + gauge;
-            lines.push(truncateToWidth(pwdColored + branchPart + modelPart + gaugePart, width));
-          }
+          lines.push(...wrapFooterSegments(statusBlocks, width, sep));
 
           if (latestUsage && latestUsage.windows.length > 0) {
-            const usageLines = renderUsageLine(latestUsage, width, theme);
-            for (const line of usageLines) {
-              lines.push(truncateToWidth(line, width));
-            }
+            lines.push(...renderUsageLine(latestUsage, width, theme));
           }
 
-          return lines;
+          return lines.map((line) => truncateToWidth(line, width));
         },
       };
     });
