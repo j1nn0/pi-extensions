@@ -1,6 +1,6 @@
 # pi-session-recall
 
-Recall past [pi](https://github.com/earendil-works/pi) sessions. Search through conversation history and query specific sessions with an LLM.
+Give [pi](https://github.com/earendil-works/pi) access to past conversations. Ask a normal question about previous work, and the agent can find the relevant sessions and inspect them for an answer.
 
 ## Install
 
@@ -16,27 +16,55 @@ Or add manually to `~/.pi/agent/settings.json`:
 }
 ```
 
-## What it does
+## How it works
 
-Two tools that let the agent recall past sessions:
+The extension adds two tools to pi: `session_search` and `session_query`. You do not need to call them yourself. Ask the agent a natural-language question such as:
+
+> What did we decide about authentication and security?
+
+The agent can then:
+
+1. Search for a few distinctive terms or exact phrases across your saved session files.
+2. Review the matching snippets and select the most relevant sessions.
+3. Ask `session_query` a focused question about each selected session.
+4. Combine the answers and respond with the relevant decisions, changes, or context.
+
+For example, the tool flow may look like this:
+
+```text
+You: What did we decide about authentication and security?
+Agent: session_search("authentication")
+Agent: session_search("security")
+Agent: session_query(<matching-session>, "What decisions did we make about authentication and security?")
+Agent: <answers your question>
+```
+
+Other useful prompts include:
+
+- `How did we fix the Cannot find module '@sinclair/typebox' error?`
+- `Which files did we change when we added passkey authentication?`
+- `Find the session where we discussed Blender VAT baking.`
+- `What approach did we reject for token refresh, and why?`
+
+There is no background indexing or vector database. Recall happens on demand: the main agent searches session JSONL files, then an LLM reads the relevant conversation and answers a focused question.
 
 ### `session_search`
 
-Literal text search across all past sessions using ripgrep-style fixed-string matching. It is not semantic search. The agent should search for one distinctive token or exact phrase at a time, such as a filename, package name, error string, function name, issue id, or remembered wording.
+Searches all past sessions using case-insensitive, literal fixed-string matching—essentially `rg -i -F`. It is not regex or semantic search. One call should contain one distinctive token or exact phrase, such as a filename, package name, error string, function name, issue ID, or remembered wording.
 
-Spaces mean exact spaces in an exact phrase. For unrelated concepts, the agent should call `session_search` multiple times instead of combining them into one query.
+Spaces are treated as part of the exact phrase. To search for separate concepts such as authentication and security, the agent makes separate calls rather than searching for `authentication security` as one phrase.
 
 ### `session_query`
 
-Deep-dives into a specific session file. Loads the conversation, sends it to an LLM, and answers your question about it. It includes user and assistant text plus tool calls, while omitting assistant thinking and tool results to keep queries efficient.
+Loads one selected session and sends its conversation to an LLM with a focused question. It includes user and assistant messages plus tool calls, while omitting assistant thinking and tool results to reduce cost.
 
-For large sessions that exceed the model's context window, it uses smart windowing: keeps the first/last messages plus keyword-relevant sections, marking gaps with `[... N messages omitted ...]`.
+For a session larger than the model's context window, it keeps the beginning, end, and sections relevant to the question. Omitted sections are marked with `[... N messages omitted ...]`.
 
-### `/session-recall`
+### Choose the query model
 
-Command to configure which model is used for `session_query`. Opens a picker with all your available models.
+Run `/session-recall` to choose the model used by `session_query`. Selecting a cheaper model keeps recall inexpensive while your current model continues to orchestrate the search and use the answer.
 
-By default, queries use your **current session model**. If you want to save tokens, pick a cheaper model (e.g. Haiku, GPT-4o mini).
+If you do not configure a query model, `session_query` uses the model active in your current session.
 
 ## Configuration
 
