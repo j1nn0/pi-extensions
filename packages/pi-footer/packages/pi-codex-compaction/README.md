@@ -9,6 +9,8 @@ When the active model uses `openai-codex/openai-codex-responses`, the extension 
 
 The extension also intercepts Pi's manual, threshold, and overflow compaction events. Pi requires those events to store a summary string, so they receive a short local checkpoint marker. The marker is filtered from provider context and is never sent to OpenAI.
 
+In interactive mode, each native compaction adds `OpenAI compaction running…` and completion or failure markers to the chat transcript. These durable TUI entries are never included in model context.
+
 ## Install
 
 ```bash

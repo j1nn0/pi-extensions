@@ -57,6 +57,7 @@ function userEntry(id: string, text: string): SessionEntry {
 
 function extensionHarness(initialBranch: SessionEntry[]) {
 	const handlers = new Map<string, (...args: any[]) => any>();
+	const entryRenderers = new Map<string, (...args: any[]) => any>();
 	let branch = initialBranch;
 	let aborted = false;
 	let usagePercent = 20;
@@ -68,6 +69,9 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 		},
 		getAllTools: () => [],
 		getActiveTools: () => [],
+		registerEntryRenderer(customType: string, renderer: (...args: any[]) => any) {
+			entryRenderers.set(customType, renderer);
+		},
 		appendEntry(customType: string, data: unknown) {
 			branch = [...branch, {
 				type: "custom",
@@ -83,6 +87,7 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 
 	const context = {
 		model,
+		mode: "tui",
 		cwd: "/var/tmp/pi-codex-compaction-test",
 		signal: new AbortController().signal,
 		hasUI: true,
@@ -109,6 +114,7 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 		setUsagePercent(percent: number) { usagePercent = percent; },
 		getBranch() { return branch; },
 		get aborted() { return aborted; },
+		entryRenderers,
 		notifications,
 	};
 }
@@ -164,6 +170,10 @@ describe("pi-codex-compaction", () => {
 		expect((requestBody!.input as JsonObject[]).at(-1)).toEqual({ type: "compaction_trigger" });
 		expect(JSON.stringify(requestBody)).not.toContain("checkpoint");
 		expect(requestHeaders!.get("x-codex-beta-features")).toContain("remote_compaction_v2");
+		expect(harness.getBranch().slice(1).map((entry: any) => entry.data?.state)).toEqual([
+			"running",
+			"complete",
+		]);
 
 		const compactionEntry = {
 			type: "compaction",
@@ -220,6 +230,34 @@ describe("pi-codex-compaction", () => {
 
 		expect(result).toEqual({ cancel: true });
 		expect(harness.notifications[0]).toContain("native compaction failed");
+		expect(harness.getBranch().slice(1).map((entry: any) => entry.data?.state)).toEqual([
+			"running",
+			"failed",
+		]);
+	});
+
+	test("shows the running marker before inline compaction finishes", async () => {
+		let resolveFetch: ((response: Response) => void) | undefined;
+		globalThis.fetch = (() => new Promise<Response>((resolve) => {
+			resolveFetch = resolve;
+		})) as typeof fetch;
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsagePercent(90);
+
+		const pending = harness.handlers.get("before_provider_request")!({
+			payload: {
+				model: model.id,
+				input: [{ role: "user", content: [{ type: "input_text", text: "continue the task" }] }],
+			},
+		}, harness.context);
+
+		expect((harness.getBranch().at(-1) as any).data.state).toBe("running");
+		await Promise.resolve();
+		expect(resolveFetch).toBeDefined();
+		resolveFetch!(compactionSse());
+		await pending;
+		expect((harness.getBranch().at(-1) as any).data.state).toBe("complete");
 	});
 
 	test("compacts inline at 90 percent and continues the same provider request", async () => {
@@ -245,10 +283,21 @@ describe("pi-codex-compaction", () => {
 			id: "cmp_1",
 			encrypted_content: "inline-opaque",
 		});
-		const checkpoint = harness.getBranch().at(-1) as any;
-		expect(checkpoint.type).toBe("custom");
-		expect(checkpoint.customType).toBe(NATIVE_COMPACTION_KIND);
+		const checkpoint = harness.getBranch().find(
+			(entry: any) => entry.type === "custom" && entry.customType === NATIVE_COMPACTION_KIND,
+		) as any;
+		expect(checkpoint).toBeDefined();
 		expect(JSON.stringify(checkpoint.data)).not.toContain("compaction_trigger");
+		expect(harness.getBranch()
+			.filter((entry: any) => entry.customType === "openai-codex-compaction-status")
+			.map((entry: any) => entry.data.state)).toEqual(["running", "complete"]);
+		const renderer = harness.entryRenderers.get("openai-codex-compaction-status")!;
+		const rendered = renderer(
+			{ data: { state: "complete" } },
+			{},
+			{ fg: (_color: string, text: string) => text },
+		).render(80).join("\n");
+		expect(rendered).toContain("OpenAI compaction complete");
 
 		harness.setUsagePercent(20);
 		const replayed = await harness.handlers.get("before_provider_request")!({

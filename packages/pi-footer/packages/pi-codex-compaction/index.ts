@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { loadConfig } from "./config.ts";
 import {
 	buildCodexHeaders,
@@ -28,6 +29,13 @@ type CachedPayloadShape = {
 	payload: JsonObject;
 };
 
+type CompactionStatus = {
+	state: "running" | "complete" | "failed";
+	error?: string;
+};
+
+const COMPACTION_STATUS_KIND = "openai-codex-compaction-status";
+
 function localMarker(): string {
 	return `OpenAI Codex native compaction checkpoint (${randomUUID()}).`;
 }
@@ -51,6 +59,37 @@ function setFeatureHeader(headers: Record<string, string | null>): void {
 
 export default function codexCompactionExtension(pi: ExtensionAPI): void {
 	const payloadShapeBySession = new Map<string, CachedPayloadShape>();
+
+	pi.registerEntryRenderer<CompactionStatus>(COMPACTION_STATUS_KIND, (entry, _options, theme) => {
+		const data = entry.data;
+		if (data?.state === "running") {
+			return new Text(theme.fg("accent", "◐ OpenAI compaction running…"), 0, 0);
+		}
+		if (data?.state === "complete") {
+			return new Text(theme.fg("success", "✓ OpenAI compaction complete"), 0, 0);
+		}
+		const suffix = data?.error ? `: ${data.error}` : "";
+		return new Text(theme.fg("error", `✗ OpenAI compaction failed${suffix}`), 0, 0);
+	});
+
+	const appendCompactionStatus = (ctx: ExtensionContext, status: CompactionStatus): void => {
+		if (ctx.mode === "tui") pi.appendEntry(COMPACTION_STATUS_KIND, status);
+	};
+
+	const withCompactionStatus = async <T>(
+		ctx: ExtensionContext,
+		operation: () => Promise<T>,
+	): Promise<T> => {
+		appendCompactionStatus(ctx, { state: "running" });
+		try {
+			const result = await operation();
+			appendCompactionStatus(ctx, { state: "complete" });
+			return result;
+		} catch (error) {
+			appendCompactionStatus(ctx, { state: "failed", error: errorMessage(error) });
+			throw error;
+		}
+	};
 
 	const createNativeCheckpoint = async (params: {
 		ctx: ExtensionContext;
@@ -141,14 +180,17 @@ export default function codexCompactionExtension(pi: ExtensionAPI): void {
 				&& hasPostCheckpointAssistant;
 
 			if (shouldAutoCompact) {
-				const native = await createNativeCheckpoint({
-					ctx,
-					model,
-					input,
-					basePayload,
-					signal: ctx.signal,
+				const native = await withCompactionStatus(ctx, async () => {
+					const result = await createNativeCheckpoint({
+						ctx,
+						model,
+						input,
+						basePayload,
+						signal: ctx.signal,
+					});
+					pi.appendEntry(NATIVE_COMPACTION_KIND, result.details);
+					return result;
 				});
-				pi.appendEntry(NATIVE_COMPACTION_KIND, native.details);
 				if (config.notify && ctx.hasUI) {
 					ctx.ui.notify(
 						`OpenAI Codex context compacted at ${usagePercent!.toFixed(1)}% and will continue.`,
@@ -192,13 +234,13 @@ export default function codexCompactionExtension(pi: ExtensionAPI): void {
 				excludeLastAssistantError: event.reason === "overflow" && event.willRetry,
 			});
 			const cached = payloadShapeBySession.get(sessionId);
-			const native = await createNativeCheckpoint({
+			const native = await withCompactionStatus(ctx, () => createNativeCheckpoint({
 				ctx,
 				model,
 				input,
 				basePayload: cached?.modelKey === modelKey(model) ? cached.payload : undefined,
 				signal: event.signal,
-			});
+			}));
 
 			return {
 				compaction: {
