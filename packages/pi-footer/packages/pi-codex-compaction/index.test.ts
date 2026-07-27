@@ -236,6 +236,67 @@ describe("pi-codex-compaction", () => {
 		]);
 	});
 
+	test("retries a message-less compaction stream error", async () => {
+		let attempts = 0;
+		globalThis.fetch = (async () => {
+			attempts++;
+			if (attempts === 1) {
+				return new Response(`data: ${JSON.stringify({ type: "error" })}\n\n`, {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				});
+			}
+			return compactionSse("retried-opaque");
+		}) as typeof fetch;
+		const entry = userEntry("user-1", "continue after a transient compaction failure");
+		const harness = extensionHarness([entry]);
+		harness.setUsagePercent(90);
+
+		const patched = await harness.handlers.get("before_provider_request")!({
+			payload: {
+				model: model.id,
+				input: [{ role: "user", content: [{ type: "input_text", text: "continue" }] }],
+			},
+		}, harness.context);
+
+		expect(attempts).toBe(2);
+		expect(harness.aborted).toBe(false);
+		expect(patched.input.at(-1)).toEqual({
+			type: "compaction",
+			id: "cmp_1",
+			encrypted_content: "retried-opaque",
+		});
+		expect(harness.getBranch()
+			.filter((entry: any) => entry.customType === "openai-codex-compaction-status")
+			.map((entry: any) => entry.data.state)).toEqual(["running", "complete"]);
+	});
+
+	test("does not retry an explicit compaction stream error", async () => {
+		let attempts = 0;
+		globalThis.fetch = (async () => {
+			attempts++;
+			return new Response(`data: ${JSON.stringify({ type: "error", message: "explicit failure" })}\n\n`, {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		}) as typeof fetch;
+		const entry = userEntry("user-1", "do not retry a permanent compaction failure");
+		const harness = extensionHarness([entry]);
+		harness.setUsagePercent(90);
+
+		const patched = await harness.handlers.get("before_provider_request")!({
+			payload: {
+				model: model.id,
+				input: [{ role: "user", content: [{ type: "input_text", text: "continue" }] }],
+			},
+		}, harness.context);
+
+		expect(attempts).toBe(1);
+		expect(harness.aborted).toBe(true);
+		expect(patched.input).toEqual([]);
+		expect(harness.notifications).toContain("OpenAI Codex request blocked: explicit failure");
+	});
+
 	test("shows the running marker before inline compaction finishes", async () => {
 		let resolveFetch: ((response: Response) => void) | undefined;
 		globalThis.fetch = (() => new Promise<Response>((resolve) => {

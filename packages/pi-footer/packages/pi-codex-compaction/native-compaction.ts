@@ -550,9 +550,10 @@ async function parseSseResponse(response: Response): Promise<{ item: ResponseIte
 		}
 		if (!isJsonObject(event)) return;
 		if (event.type === "error") {
-			throw new NonRetryableCompactionError(
-				typeof event.message === "string" ? event.message : "OpenAI Codex compaction failed.",
-			);
+			if (typeof event.message !== "string" || !event.message.trim()) {
+				throw new RetryableCompactionStreamError("OpenAI Codex compaction failed.");
+			}
+			throw new NonRetryableCompactionError(event.message);
 		}
 		if (event.type === "response.failed") {
 			throw new NonRetryableCompactionError("OpenAI Codex compaction ended with response.failed.");
