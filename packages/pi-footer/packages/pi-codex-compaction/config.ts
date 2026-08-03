@@ -6,13 +6,11 @@ import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 export interface CodexCompactionConfig {
 	autoCompact: boolean;
 	thresholdRatio: number;
-	notify: boolean;
 }
 
 const DEFAULT_CONFIG: CodexCompactionConfig = {
 	autoCompact: true,
 	thresholdRatio: 0.9,
-	notify: false,
 };
 
 function readConfig(path: string): Partial<CodexCompactionConfig> {
@@ -26,7 +24,6 @@ function readConfig(path: string): Partial<CodexCompactionConfig> {
 					? { thresholdRatio: parsed.thresholdRatio }
 					: {}
 			),
-			...(typeof parsed.notify === "boolean" ? { notify: parsed.notify } : {}),
 		};
 	} catch {
 		return {};
@@ -38,10 +35,5 @@ export function loadConfig(cwd: string, projectTrusted: boolean): CodexCompactio
 	const projectConfig = projectTrusted
 		? readConfig(join(cwd, CONFIG_DIR_NAME, "pi-codex-compaction.json"))
 		: {};
-	const configured = { ...DEFAULT_CONFIG, ...globalConfig, ...projectConfig };
-	const envRatio = Number(process.env.PI_CODEX_COMPACTION_THRESHOLD_RATIO);
-	return {
-		...configured,
-		...(Number.isFinite(envRatio) && envRatio > 0 && envRatio < 1 ? { thresholdRatio: envRatio } : {}),
-	};
+	return { ...DEFAULT_CONFIG, ...globalConfig, ...projectConfig };
 }

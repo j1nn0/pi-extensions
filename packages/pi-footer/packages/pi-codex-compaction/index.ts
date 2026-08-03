@@ -34,7 +34,13 @@ type CompactionStatus = {
 	error?: string;
 };
 
+type ForcedCompactionState = {
+	sessionId: string;
+	phase: "waitingForSettle" | "compacting" | "compacted";
+};
+
 const COMPACTION_STATUS_KIND = "openai-codex-compaction-status";
+const CONTINUATION_PROMPT = "Compaction completed. Continue.";
 
 function localMarker(): string {
 	return `OpenAI Codex native compaction checkpoint (${randomUUID()}).`;
@@ -59,6 +65,7 @@ function setFeatureHeader(headers: Record<string, string | null>): void {
 
 export default function codexCompactionExtension(pi: ExtensionAPI): void {
 	const payloadShapeBySession = new Map<string, CachedPayloadShape>();
+	let forcedCompaction: ForcedCompactionState | undefined;
 
 	pi.registerEntryRenderer<CompactionStatus>(COMPACTION_STATUS_KIND, (entry, _options, theme) => {
 		const data = entry.data;
@@ -132,12 +139,15 @@ export default function codexCompactionExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", () => {
 		payloadShapeBySession.clear();
+		forcedCompaction = undefined;
 	});
 	pi.on("session_shutdown", () => {
 		payloadShapeBySession.clear();
+		forcedCompaction = undefined;
 	});
 	pi.on("model_select", (_event, ctx) => {
 		payloadShapeBySession.delete(ctx.sessionManager.getSessionId());
+		forcedCompaction = undefined;
 	});
 
 	pi.on("context", (event, ctx) => {
@@ -165,45 +175,8 @@ export default function codexCompactionExtension(pi: ExtensionAPI): void {
 		const checkpoint = findNativeCheckpoint(branch);
 
 		try {
-			const input = checkpoint.status === "none" && Array.isArray(event.payload.input)
-				? event.payload.input.filter(isJsonObject) as ResponseItem[]
-				: effectiveInputForBranch({ branch, model, tools: pi.getAllTools() });
-			const config = loadConfig(ctx.cwd, ctx.isProjectTrusted());
-			const usagePercent = ctx.getContextUsage()?.percent;
-			const hasPostCheckpointAssistant = checkpoint.status !== "valid" || branch
-				.slice(checkpoint.checkpoint.entryIndex + 1)
-				.some((entry) => entry.type === "message" && entry.message.role === "assistant");
-			const shouldAutoCompact = config.autoCompact
-				&& usagePercent !== null
-				&& usagePercent !== undefined
-				&& usagePercent >= config.thresholdRatio * 100
-				&& hasPostCheckpointAssistant;
-
-			if (shouldAutoCompact) {
-				const native = await withCompactionStatus(ctx, async () => {
-					const result = await createNativeCheckpoint({
-						ctx,
-						model,
-						input,
-						basePayload,
-						signal: ctx.signal,
-					});
-					pi.appendEntry(NATIVE_COMPACTION_KIND, result.details);
-					return result;
-				});
-				if (config.notify && ctx.hasUI) {
-					ctx.ui.notify(
-						`OpenAI Codex context compacted at ${usagePercent!.toFixed(1)}% and will continue.`,
-						"info",
-					);
-				}
-				const payload: JsonObject = { ...event.payload, input: native.details.replacementHistory };
-				delete payload.messages;
-				delete payload.previous_response_id;
-				return payload;
-			}
-
 			if (checkpoint.status === "none") return undefined;
+			const input = effectiveInputForBranch({ branch, model, tools: pi.getAllTools() });
 			const payload: JsonObject = { ...event.payload, input };
 			delete payload.messages;
 			delete payload.previous_response_id;
@@ -252,10 +225,97 @@ export default function codexCompactionExtension(pi: ExtensionAPI): void {
 				},
 			};
 		} catch (error) {
+			if (forcedCompaction?.sessionId === ctx.sessionManager.getSessionId()) {
+				forcedCompaction = undefined;
+			}
 			if (!event.signal.aborted && ctx.hasUI) {
 				ctx.ui.notify(`OpenAI Codex native compaction failed: ${errorMessage(error)}`, "error");
 			}
 			return { cancel: true };
 		}
+	});
+
+	const continueAfterCompaction = (ctx: ExtensionContext, expected: ForcedCompactionState): void => {
+		if (forcedCompaction !== expected) return;
+		forcedCompaction = undefined;
+		if (ctx.hasPendingMessages()) return;
+		if (ctx.isIdle()) {
+			pi.sendUserMessage(CONTINUATION_PROMPT);
+		} else {
+			pi.sendUserMessage(CONTINUATION_PROMPT, { deliverAs: "followUp" });
+		}
+	};
+
+	pi.on("turn_end", (_event, ctx) => {
+		if (forcedCompaction || !isOpenAICodexModel(ctx.model)) return;
+		const config = loadConfig(ctx.cwd, ctx.isProjectTrusted());
+		if (!config.autoCompact) return;
+
+		const usage = ctx.getContextUsage();
+		if (usage?.percent === null || usage?.percent === undefined) return;
+		if (usage.percent < config.thresholdRatio * 100) return;
+
+		forcedCompaction = {
+			sessionId: ctx.sessionManager.getSessionId(),
+			phase: "waitingForSettle",
+		};
+		if (ctx.hasUI) {
+			ctx.ui.notify(
+				`OpenAI Codex context reached ${usage.percent.toFixed(1)}%; stopping for compaction.`,
+				"warning",
+			);
+		}
+		ctx.abort();
+	});
+
+	pi.on("session_compact", (event, ctx) => {
+		const state = forcedCompaction;
+		const details = event.compactionEntry.details;
+		if (
+			!state
+			|| state.phase !== "waitingForSettle"
+			|| state.sessionId !== ctx.sessionManager.getSessionId()
+			|| event.reason === "manual"
+			|| !event.fromExtension
+			|| !isOpenAICodexModel(ctx.model)
+			|| !isJsonObject(details)
+			|| details.kind !== NATIVE_COMPACTION_KIND
+		) {
+			return;
+		}
+		if (event.willRetry) {
+			forcedCompaction = undefined;
+			return;
+		}
+		forcedCompaction = { ...state, phase: "compacted" };
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		const state = forcedCompaction;
+		if (
+			!state
+			|| state.sessionId !== ctx.sessionManager.getSessionId()
+			|| !isOpenAICodexModel(ctx.model)
+		) {
+			return;
+		}
+		if (state.phase === "compacted") {
+			continueAfterCompaction(ctx, state);
+			return;
+		}
+		if (state.phase !== "waitingForSettle") return;
+
+		const compacting: ForcedCompactionState = { ...state, phase: "compacting" };
+		forcedCompaction = compacting;
+		ctx.compact({
+			onComplete: () => continueAfterCompaction(ctx, compacting),
+			onError: (error) => {
+				if (forcedCompaction !== compacting) return;
+				forcedCompaction = undefined;
+				if (ctx.hasUI) {
+					ctx.ui.notify(`OpenAI Codex compaction failed: ${error.message}`, "error");
+				}
+			},
+		});
 	});
 }

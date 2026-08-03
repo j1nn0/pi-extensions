@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import codexCompactionExtension from "./index.ts";
 import {
@@ -13,16 +13,9 @@ import {
 } from "./native-compaction.ts";
 
 const originalFetch = globalThis.fetch;
-const originalThreshold = process.env.PI_CODEX_COMPACTION_THRESHOLD_RATIO;
-
-beforeEach(() => {
-	process.env.PI_CODEX_COMPACTION_THRESHOLD_RATIO = "0.9";
-});
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	if (originalThreshold === undefined) delete process.env.PI_CODEX_COMPACTION_THRESHOLD_RATIO;
-	else process.env.PI_CODEX_COMPACTION_THRESHOLD_RATIO = originalThreshold;
 });
 
 function token(): string {
@@ -60,9 +53,13 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 	const entryRenderers = new Map<string, (...args: any[]) => any>();
 	let branch = initialBranch;
 	let aborted = false;
-	let usagePercent = 20;
+	let hasPendingMessages = false;
+	let idle = false;
+	let usageTokens = 40_000;
 	let customEntryId = 0;
 	const notifications: string[] = [];
+	const compactionRequests: any[] = [];
+	const sentUserMessages: Array<{ content: string; options: any }> = [];
 	const pi = {
 		on(name: string, handler: (...args: any[]) => any) {
 			handlers.set(name, handler);
@@ -82,6 +79,9 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 				data,
 			} as SessionEntry];
 		},
+		sendUserMessage(content: string, options?: any) {
+			sentUserMessages.push({ content, options });
+		},
 	} as any;
 	codexCompactionExtension(pi);
 
@@ -93,8 +93,15 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 		hasUI: true,
 		ui: { notify: (message: string) => notifications.push(message) },
 		abort: () => { aborted = true; },
+		compact: (options: any) => { compactionRequests.push(options); },
+		isIdle: () => idle,
 		isProjectTrusted: () => false,
-		getContextUsage: () => ({ tokens: 54_400, contextWindow: 272_000, percent: usagePercent }),
+		hasPendingMessages: () => hasPendingMessages,
+		getContextUsage: () => ({
+			tokens: usageTokens,
+			contextWindow: model.contextWindow,
+			percent: (usageTokens / model.contextWindow) * 100,
+		}),
 		getSystemPrompt: () => "You are Codex.",
 		sessionManager: {
 			getSessionId: () => "session-123",
@@ -111,11 +118,15 @@ function extensionHarness(initialBranch: SessionEntry[]) {
 		handlers,
 		context,
 		setBranch(next: SessionEntry[]) { branch = next; },
-		setUsagePercent(percent: number) { usagePercent = percent; },
+		setHasPendingMessages(pending: boolean) { hasPendingMessages = pending; },
+		setIdle(value: boolean) { idle = value; },
+		setUsageTokens(tokens: number) { usageTokens = tokens; },
 		getBranch() { return branch; },
 		get aborted() { return aborted; },
 		entryRenderers,
 		notifications,
+		compactionRequests,
+		sentUserMessages,
 	};
 }
 
@@ -250,18 +261,16 @@ describe("pi-codex-compaction", () => {
 		}) as typeof fetch;
 		const entry = userEntry("user-1", "continue after a transient compaction failure");
 		const harness = extensionHarness([entry]);
-		harness.setUsagePercent(90);
-
-		const patched = await harness.handlers.get("before_provider_request")!({
-			payload: {
-				model: model.id,
-				input: [{ role: "user", content: [{ type: "input_text", text: "continue" }] }],
-			},
+		const result = await harness.handlers.get("session_before_compact")!({
+			branchEntries: [entry],
+			preparation: { firstKeptEntryId: "user-1", tokensBefore: 50_000 },
+			reason: "threshold",
+			willRetry: false,
+			signal: new AbortController().signal,
 		}, harness.context);
 
 		expect(attempts).toBe(2);
-		expect(harness.aborted).toBe(false);
-		expect(patched.input.at(-1)).toEqual({
+		expect(result.compaction.details.replacementHistory.at(-1)).toEqual({
 			type: "compaction",
 			id: "cmp_1",
 			encrypted_content: "retried-opaque",
@@ -282,35 +291,32 @@ describe("pi-codex-compaction", () => {
 		}) as typeof fetch;
 		const entry = userEntry("user-1", "do not retry a permanent compaction failure");
 		const harness = extensionHarness([entry]);
-		harness.setUsagePercent(90);
-
-		const patched = await harness.handlers.get("before_provider_request")!({
-			payload: {
-				model: model.id,
-				input: [{ role: "user", content: [{ type: "input_text", text: "continue" }] }],
-			},
+		const result = await harness.handlers.get("session_before_compact")!({
+			branchEntries: [entry],
+			preparation: { firstKeptEntryId: "user-1", tokensBefore: 50_000 },
+			reason: "threshold",
+			willRetry: false,
+			signal: new AbortController().signal,
 		}, harness.context);
 
 		expect(attempts).toBe(1);
-		expect(harness.aborted).toBe(true);
-		expect(patched.input).toEqual([]);
-		expect(harness.notifications).toContain("OpenAI Codex request blocked: explicit failure");
+		expect(result).toEqual({ cancel: true });
+		expect(harness.notifications).toContain("OpenAI Codex native compaction failed: explicit failure");
 	});
 
-	test("shows the running marker before inline compaction finishes", async () => {
+	test("shows the running marker while Pi compaction is in progress", async () => {
 		let resolveFetch: ((response: Response) => void) | undefined;
 		globalThis.fetch = (() => new Promise<Response>((resolve) => {
 			resolveFetch = resolve;
 		})) as typeof fetch;
 		const entry = userEntry("user-1", "continue the task");
 		const harness = extensionHarness([entry]);
-		harness.setUsagePercent(90);
-
-		const pending = harness.handlers.get("before_provider_request")!({
-			payload: {
-				model: model.id,
-				input: [{ role: "user", content: [{ type: "input_text", text: "continue the task" }] }],
-			},
+		const pending = harness.handlers.get("session_before_compact")!({
+			branchEntries: [entry],
+			preparation: { firstKeptEntryId: "user-1", tokensBefore: 50_000 },
+			reason: "threshold",
+			willRetry: false,
+			signal: new AbortController().signal,
 		}, harness.context);
 
 		expect((harness.getBranch().at(-1) as any).data.state).toBe("running");
@@ -319,39 +325,6 @@ describe("pi-codex-compaction", () => {
 		resolveFetch!(compactionSse());
 		await pending;
 		expect((harness.getBranch().at(-1) as any).data.state).toBe("complete");
-	});
-
-	test("compacts inline at 90 percent and continues the same provider request", async () => {
-		let compactionRequest: JsonObject | undefined;
-		globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-			compactionRequest = JSON.parse(String(init?.body));
-			return compactionSse("inline-opaque");
-		}) as typeof fetch;
-		const entry = userEntry("user-1", "continue the tool-driven task");
-		const harness = extensionHarness([entry]);
-		harness.setUsagePercent(90);
-
-		const patched = await harness.handlers.get("before_provider_request")!({
-			payload: {
-				model: model.id,
-				input: [{ role: "user", content: [{ type: "input_text", text: "continue the tool-driven task" }] }],
-			},
-		}, harness.context);
-
-		expect((compactionRequest!.input as JsonObject[]).at(-1)).toEqual({ type: "compaction_trigger" });
-		expect(patched.input.at(-1)).toEqual({
-			type: "compaction",
-			id: "cmp_1",
-			encrypted_content: "inline-opaque",
-		});
-		const checkpoint = harness.getBranch().find(
-			(entry: any) => entry.type === "custom" && entry.customType === NATIVE_COMPACTION_KIND,
-		) as any;
-		expect(checkpoint).toBeDefined();
-		expect(JSON.stringify(checkpoint.data)).not.toContain("compaction_trigger");
-		expect(harness.getBranch()
-			.filter((entry: any) => entry.customType === "openai-codex-compaction-status")
-			.map((entry: any) => entry.data.state)).toEqual(["running", "complete"]);
 		const renderer = harness.entryRenderers.get("openai-codex-compaction-status")!;
 		const rendered = renderer(
 			{ data: { state: "complete" } },
@@ -359,17 +332,108 @@ describe("pi-codex-compaction", () => {
 			{ fg: (_color: string, text: string) => text },
 		).render(80).join("\n");
 		expect(rendered).toContain("OpenAI compaction complete");
+	});
 
-		harness.setUsagePercent(20);
-		const replayed = await harness.handlers.get("before_provider_request")!({
-			payload: { model: model.id, input: [{ role: "user", content: "stale Pi history" }] },
+	test("does not compact inside the provider request hook", async () => {
+		let called = false;
+		globalThis.fetch = (async () => {
+			called = true;
+			return compactionSse();
+		}) as typeof fetch;
+		const entry = userEntry("user-1", "continue the tool-driven task");
+		const harness = extensionHarness([entry]);
+		const result = await harness.handlers.get("before_provider_request")!({
+			payload: {
+				model: model.id,
+				input: [{ role: "user", content: [{ type: "input_text", text: "continue the tool-driven task" }] }],
+			},
 		}, harness.context);
-		expect(replayed.input.at(-1)).toEqual({
-			type: "compaction",
-			id: "cmp_1",
-			encrypted_content: "inline-opaque",
-		});
-		expect(JSON.stringify(replayed)).not.toContain("stale Pi history");
+
+		expect(result).toBeUndefined();
+		expect(called).toBe(false);
+		expect(harness.getBranch()).toEqual([entry]);
+	});
+
+	test("aborts at 90 percent, compacts after settlement, and visibly continues", () => {
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsageTokens(180_000);
+
+		harness.handlers.get("turn_end")!({}, harness.context);
+		expect(harness.aborted).toBe(true);
+		expect(harness.compactionRequests).toHaveLength(0);
+
+		harness.setIdle(true);
+		harness.handlers.get("agent_settled")!({}, harness.context);
+		expect(harness.compactionRequests).toHaveLength(1);
+		harness.compactionRequests[0].onComplete({});
+
+		expect(harness.sentUserMessages).toEqual([{
+			content: "Compaction completed. Continue.",
+			options: undefined,
+		}]);
+	});
+
+	test("uses Pi threshold compaction when it finishes before settlement", () => {
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsageTokens(180_000);
+		harness.handlers.get("turn_end")!({}, harness.context);
+
+		harness.handlers.get("session_compact")!({
+			reason: "threshold",
+			willRetry: false,
+			fromExtension: true,
+			compactionEntry: { details: { kind: NATIVE_COMPACTION_KIND } },
+		}, harness.context);
+		harness.setIdle(true);
+		harness.handlers.get("agent_settled")!({}, harness.context);
+
+		expect(harness.compactionRequests).toHaveLength(0);
+		expect(harness.sentUserMessages).toEqual([{
+			content: "Compaction completed. Continue.",
+			options: undefined,
+		}]);
+	});
+
+	test("does not add a continuation when overflow recovery will retry", () => {
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsageTokens(180_000);
+		harness.handlers.get("turn_end")!({}, harness.context);
+
+		harness.handlers.get("session_compact")!({
+			reason: "overflow",
+			willRetry: true,
+			fromExtension: true,
+			compactionEntry: { details: { kind: NATIVE_COMPACTION_KIND } },
+		}, harness.context);
+		harness.setIdle(true);
+		harness.handlers.get("agent_settled")!({}, harness.context);
+
+		expect(harness.compactionRequests).toHaveLength(0);
+		expect(harness.sentUserMessages).toEqual([]);
+	});
+
+	test("does not interrupt below the configured threshold", () => {
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsageTokens(179_999);
+		harness.handlers.get("turn_end")!({}, harness.context);
+		expect(harness.aborted).toBe(false);
+	});
+
+
+	test("does not auto-continue when input is already queued", () => {
+		const entry = userEntry("user-1", "continue the task");
+		const harness = extensionHarness([entry]);
+		harness.setUsageTokens(180_000);
+		harness.handlers.get("turn_end")!({}, harness.context);
+		harness.setIdle(true);
+		harness.handlers.get("agent_settled")!({}, harness.context);
+		harness.setHasPendingMessages(true);
+		harness.compactionRequests[0].onComplete({});
+		expect(harness.sentUserMessages).toEqual([]);
 	});
 
 	test("leaves non-Codex providers untouched", async () => {
