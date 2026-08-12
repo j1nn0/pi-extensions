@@ -24,6 +24,7 @@ Minimal footer for [pi](https://github.com/earendil-works/pi) that replaces the 
 | MiniMax        | 5h + weekly rolling windows (Token Plan, credit-based)  |
 | MiniMax CN     | Same as MiniMax, China endpoint                        |
 | Kimi Coding    | 5h + weekly rolling windows (Plan)                     |
+| OpenCode Go    | 5h + weekly + monthly usage windows                    |
 
 ## Install
 

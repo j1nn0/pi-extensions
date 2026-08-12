@@ -268,7 +268,7 @@ function getKimiToken(): string | undefined {
 }
 
 function getOpencodeToken(): string | undefined {
-  return getApiKey("opencode-go", "OPENCODE_GO_API_KEY");
+  return getApiKey("opencode-go", "OPENCODE_API_KEY");
 }
 
 // ============ Time Formatting ============
@@ -730,30 +730,28 @@ async function fetchOpencodeGoUsage(): Promise<UsageSnapshot> {
     }
 
     const data = (await res.json()) as any;
-    // API response shape: { usage: { rolling: { status, percent, resetsAt }, weekly: ..., monthly: ... } }
-    const usage = data.usage ?? data;
     const windows: RateWindow[] = [];
 
-    if (usage.rolling) {
-      const usedPercent = clampPercent(usage.rolling.percent ?? 0);
-      const resetsIn = usage.rolling.resetsAt
-        ? formatResetTime(new Date(usage.rolling.resetsAt))
+    if (data.rollingUsage) {
+      const usedPercent = clampPercent(data.rollingUsage.usagePercent ?? 0);
+      const resetsIn = Number.isFinite(data.rollingUsage.resetInSec)
+        ? formatResetTime(new Date(Date.now() + data.rollingUsage.resetInSec * 1000))
         : undefined;
       windows.push({ label: "5h", usedPercent, resetsIn });
     }
 
-    if (usage.weekly) {
-      const usedPercent = clampPercent(usage.weekly.percent ?? 0);
-      const resetsIn = usage.weekly.resetsAt
-        ? formatResetTime(new Date(usage.weekly.resetsAt))
+    if (data.weeklyUsage) {
+      const usedPercent = clampPercent(data.weeklyUsage.usagePercent ?? 0);
+      const resetsIn = Number.isFinite(data.weeklyUsage.resetInSec)
+        ? formatResetTime(new Date(Date.now() + data.weeklyUsage.resetInSec * 1000))
         : undefined;
       windows.push({ label: "Week", usedPercent, resetsIn });
     }
 
-    if (usage.monthly) {
-      const usedPercent = clampPercent(usage.monthly.percent ?? 0);
-      const resetsIn = usage.monthly.resetsAt
-        ? formatResetTime(new Date(usage.monthly.resetsAt))
+    if (data.monthlyUsage) {
+      const usedPercent = clampPercent(data.monthlyUsage.usagePercent ?? 0);
+      const resetsIn = Number.isFinite(data.monthlyUsage.resetInSec)
+        ? formatResetTime(new Date(Date.now() + data.monthlyUsage.resetInSec * 1000))
         : undefined;
       windows.push({ label: "Month", usedPercent, resetsIn });
     }
