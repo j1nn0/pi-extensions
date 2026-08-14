@@ -8,10 +8,9 @@ This is my working collection rather than a single polished suite. Some extensio
 |---------|-------------|-------|
 | [pi-minimal-footer](packages/pi-minimal-footer) | Minimal footer with context gauge and subscription usage bars | 🔥 Core |
 | [pi-session-recall](packages/pi-session-recall) | Search and query past sessions — "remember when we tried X?" | 🔥 Core |
-| [pi-auto-permissions](packages/pi-auto-permissions) | Context-aware Bash permissions with automated guardian review | 🟢 Active |
-| [pi-codex-subagents](packages/pi-codex-subagents) | Codex-shaped, session-scoped subagents with templates, waits, steering, and a live overlay | 🟢 Active |
-| [pi-codex-compaction](packages/pi-codex-compaction) | OpenAI Codex native remote compaction through Pi's existing compaction lifecycle | 🟢 Active |
-| [pi-handoff](packages/pi-handoff) | Transfer context to a new session with full briefing | 🟡 Moderate+ |
+| [pi-auto-permissions](packages/pi-auto-permissions) | Context-aware Bash permissions with automated guardian review | 🔥 Core |
+| [pi-codex-subagents](packages/pi-codex-subagents) | Codex-shaped, session-scoped subagents with templates, waits, steering, and a live overlay | 🔥 Core |
+| [pi-codex-compaction](packages/pi-codex-compaction) | OpenAI Codex native remote compaction through Pi's existing compaction lifecycle | 🔥 Core |
 | [pi-quit-and-delete](packages/pi-quit-and-delete) | Keyboard shortcut to quit pi and permanently delete the active session file | 🟠 Moderate |
 | [pi-ssh-tools](packages/pi-ssh-tools) | Toggle explicit SSH tools on demand via `/ssh` without replacing local tools | 🟠 Moderate |
 | [pi-fork-plus](packages/pi-fork-plus) | Fork from the session tree, including editable assistant-message forks | 🧪 Experimental |
@@ -24,6 +23,7 @@ This is my working collection rather than a single polished suite. Some extensio
 | [pi-sketch](packages/pi-sketch) | Visual sketching in the terminal | ⚪ Very rare |
 | [pi-tmux](packages/pi-tmux) | Tmux pane management — largely superseded by Herdr | ⚪ Very rare |
 | [pi-worktree](packages/pi-worktree) | Relocate the active pi session to a git worktree while preserving conversation history | ⚪ Very rare |
+| pi-handoff | Transfer context to a new session with full briefing | ⛔ Discontinued |
 | [pi-web-browse](packages/pi-web-browse) | Deprecated — use [agent-skills](https://github.com/ogulcancelik/agent-skills) for web browsing | ⛔ Deprecated |
 
 ## Install
