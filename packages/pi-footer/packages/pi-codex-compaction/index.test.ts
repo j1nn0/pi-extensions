@@ -483,6 +483,95 @@ describe("pi-codex-compaction", () => {
 });
 
 describe("native compaction helpers", () => {
+	test("drops foreign reasoning state and response item ids", () => {
+		const user = userEntry("user-1", "review this change");
+		const assistant = {
+			type: "message",
+			id: "assistant-1",
+			parentId: "user-1",
+			timestamp: new Date().toISOString(),
+			message: {
+				role: "assistant",
+				provider: "xai",
+				api: "openai-responses",
+				model: "grok-4.6",
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+				content: [
+					{
+						type: "thinking",
+						thinking: "checking",
+						thinkingSignature: JSON.stringify({
+							type: "reasoning",
+							id: "rs_grok_1",
+							status: "completed",
+							summary: [{ type: "summary_text", text: "checking" }],
+							encrypted_content: "opaque-grok-state",
+						}),
+					},
+					{
+						type: "text",
+						text: "Looks good.",
+						textSignature: JSON.stringify({ v: 1, id: "msg_grok_1" }),
+					},
+					{
+						type: "toolCall",
+						id: "call_grok_1|fc_grok_1",
+						name: "bash",
+						arguments: { command: "git status" },
+					},
+				],
+			},
+		} as SessionEntry;
+
+		const input = effectiveInputForBranch({ branch: [user, assistant], model, tools: [] });
+		const assistantMessage = input.find(
+			(item) => item.type === "message" && item.role === "assistant",
+		)!;
+		const functionCall = input.find((item) => item.type === "function_call")!;
+
+		expect(input.find((item) => item.type === "reasoning")).toBeUndefined();
+		expect(JSON.stringify(input)).not.toContain("opaque-grok-state");
+		expect(assistantMessage.status).toBeUndefined();
+		expect(assistantMessage.id).toBe("msg_pi_1");
+		expect(functionCall.call_id).toBe("call_grok_1");
+		expect(functionCall.id).toBeUndefined();
+	});
+
+	test("removes response-only status from Codex reasoning", () => {
+		const user = userEntry("user-1", "continue");
+		const assistant = {
+			type: "message",
+			id: "assistant-1",
+			parentId: "user-1",
+			timestamp: new Date().toISOString(),
+			message: {
+				role: "assistant",
+				provider: "openai-codex",
+				api: "openai-codex-responses",
+				model: model.id,
+				stopReason: "stop",
+				timestamp: Date.now(),
+				content: [{
+					type: "thinking",
+					thinking: "checking",
+					thinkingSignature: JSON.stringify({
+						type: "reasoning",
+						id: "rs_codex_1",
+						status: "completed",
+						summary: [],
+						encrypted_content: "opaque-codex-state",
+					}),
+				}],
+			},
+		} as SessionEntry;
+
+		const input = effectiveInputForBranch({ branch: [user, assistant], model, tools: [] });
+		const reasoning = input.find((item) => item.type === "reasoning")!;
+		expect(reasoning.status).toBeUndefined();
+		expect(reasoning.encrypted_content).toBe("opaque-codex-state");
+	});
+
 	test("retains only recent user messages before the opaque item", () => {
 		const input = [
 			{ type: "message", role: "user", content: [{ type: "input_text", text: "old" }] },

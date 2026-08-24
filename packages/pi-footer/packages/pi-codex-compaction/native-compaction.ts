@@ -208,18 +208,25 @@ function messagesToResponseItems(model: Model<any>, messages: Message[], tools: 
 				messageIndex++;
 				continue;
 			}
+			const isSameProviderAndApi = message.provider === model.provider && message.api === model.api;
 			let textIndex = 0;
 			for (const block of message.content) {
 				if (!isJsonObject(block)) continue;
 				if (block.type === "thinking" && typeof block.thinkingSignature === "string") {
-					try {
-						const reasoning = JSON.parse(block.thinkingSignature);
-						if (isJsonObject(reasoning) && reasoning.type === "reasoning") items.push(cloneItem(reasoning));
-					} catch {}
+					if (isSameProviderAndApi) {
+						try {
+							const reasoning = JSON.parse(block.thinkingSignature);
+							if (isJsonObject(reasoning) && reasoning.type === "reasoning") {
+								const item = cloneItem(reasoning);
+								delete item.status;
+								items.push(item);
+							}
+						} catch {}
+					}
 					continue;
 				}
 				if (block.type === "text" && typeof block.text === "string") {
-					const signature = textSignature(block.textSignature);
+					const signature = isSameProviderAndApi ? textSignature(block.textSignature) : {};
 					const fallbackId = textIndex === 0 ? `msg_pi_${messageIndex}` : `msg_pi_${messageIndex}_${textIndex}`;
 					textIndex++;
 					const rawId = signature.id || fallbackId;
@@ -228,7 +235,6 @@ function messagesToResponseItems(model: Model<any>, messages: Message[], tools: 
 						type: "message",
 						role: "assistant",
 						id,
-						status: "completed",
 						content: [{ type: "output_text", text: block.text, annotations: [] }],
 						...(signature.phase ? { phase: signature.phase } : {}),
 					});
@@ -236,11 +242,12 @@ function messagesToResponseItems(model: Model<any>, messages: Message[], tools: 
 				}
 				if (block.type === "toolCall" && typeof block.id === "string") {
 					const [callId, rawItemId] = block.id.split("|");
+					const itemId = isSameProviderAndApi ? normalizedItemId(rawItemId) : undefined;
 					pendingToolCalls.set(block.id, callId);
 					items.push({
 						type: "function_call",
 						call_id: callId,
-						...(normalizedItemId(rawItemId) ? { id: normalizedItemId(rawItemId) } : {}),
+						...(itemId ? { id: itemId } : {}),
 						name: String(block.name ?? ""),
 						arguments: JSON.stringify(block.arguments ?? {}),
 					});
