@@ -1,6 +1,6 @@
 {
   "name": "@ogulcancelik/pi-model-thinking",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Auto-set thinking levels per model/provider in pi",
   "type": "module",
   "keywords": [
