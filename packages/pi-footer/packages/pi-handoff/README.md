@@ -1,6 +1,7 @@
 # pi-handoff
 
-Discontinued.
+> [!WARNING]
+> This package is no longer maintained. Its code remains available as a reference.
 
 I am not using this extension anymore.
 
@@ -35,7 +36,7 @@ It gives up the old "agent starts the next session itself" idea, but it works cl
 
 ## Status
 
-This package is kept here as a discontinued experiment / reference, not an actively used extension.
+This package is kept here as an experiment and reference, not an actively maintained extension.
 
 ## License
 

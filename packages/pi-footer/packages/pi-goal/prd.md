@@ -178,18 +178,10 @@
  - `ctx.newSession()` is available on `ExtensionCommandContext`, not plain `ExtensionContext`.
  - `newSession({ parentSession })` records the parent session path in the new session header.
 
- ### pi-handoff Reference
+ ### Prior Handoff Prototype
 
- Current local handoff implementation:
-
- - `/home/can/Projects/pi-extensions/packages/pi-handoff/handoff.ts`
-
- Upstream handoff example referenced by README:
-
- - `/home/can/Projects/pi-mono/packages/coding-agent/examples/extensions/handoff.ts`
-
- `pi-handoff` uses `ctx.getContextUsage()` in `turn_end`. When context crosses its threshold, it appends a hidden custom message asking the agent to use the handoff tool. The hidden
- message is sent with:
+ An earlier local prototype used `ctx.getContextUsage()` in `turn_end`. When context crossed its threshold, it appended a hidden custom message asking the agent to use a handoff tool. The hidden
+ message was sent with:
 
  ```ts
  pi.sendMessage(
@@ -204,7 +196,7 @@
 
  This is the right primitive for `pi-goal` continuation and budget-limit messages under the append-only constraint.
 
- The existing `pi-handoff` tool uses a command context type to call `ctx.newSession()`. That works but is not the clean documented shape for normal tools. For `pi-goal`, use the
+ The prototype's handoff tool used a command context type to call `ctx.newSession()`. That worked but was not the clean documented shape for normal tools. For `pi-goal`, use the
  captured `/goal` command context as the session-switching controller.
 
  ## Product Behavior
@@ -705,7 +697,7 @@
 
  Automatic new-session handoff requires `ExtensionCommandContext` because `ctx.newSession()` is documented on command contexts.
 
- Normal events like `turn_end` receive `ExtensionContext`. Extension tools are wrapped with `runner.createContext()`, so they also receive normal `ExtensionContext` in the documented API. The current local `pi-handoff` casts tool ctx as `ExtensionCommandContext`, but `pi-goal` should not rely on that as a primary design.
+ Normal events like `turn_end` receive `ExtensionContext`. Extension tools are wrapped with `runner.createContext()`, so they also receive normal `ExtensionContext` in the documented API. The prior handoff prototype cast tool ctx as `ExtensionCommandContext`, but `pi-goal` should not rely on that as a primary design.
 
  Therefore `/goal <objective>` is the canonical start path. It captures the command context and stores it in memory as the automation controller.
 

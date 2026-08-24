@@ -1,5 +1,8 @@
 # pi-goal
 
+> [!WARNING]
+> This package is no longer maintained. Its code remains available as a reference.
+
 Codex-style long-running goal mode for [pi](https://github.com/earendil-works/pi). Start one explicit objective, let the main agent keep working across turns, and automatically hand off to a linked new session when context reaches the budget limit.
 
 ## Install

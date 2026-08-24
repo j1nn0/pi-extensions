@@ -20,11 +20,11 @@ This is my working collection rather than a single polished suite. Some extensio
 | [pi-model-thinking](packages/pi-model-thinking) | Auto-set and remember thinking levels per model | 🧪 Experimental |
 | [pi-ghost](packages/pi-ghost) | Ephemeral side conversation overlay — open a temporary ghost session inside the current pi UI | ⚪ Very rare |
 | [pi-ghostty-theme-sync](packages/pi-ghostty-theme-sync) | Sync pi theme with Ghostty terminal colors | ⚪ Very rare |
-| [pi-goal](packages/pi-goal) | Break work into tasks, spawn parallel worker agents | ⚪ Very rare |
 | [pi-sketch](packages/pi-sketch) | Visual sketching in the terminal | ⚪ Very rare |
 | [pi-tmux](packages/pi-tmux) | Tmux pane management — largely superseded by Herdr | ⚪ Very rare |
 | [pi-worktree](packages/pi-worktree) | Relocate the active pi session to a git worktree while preserving conversation history | ⚪ Very rare |
-| pi-handoff | Transfer context to a new session with full briefing | ⛔ Discontinued |
+| [pi-goal](packages/pi-goal) | Long-running goal mode with automatic linked-session handoff | ⛔ Not maintained |
+| [pi-handoff](packages/pi-handoff) | Transfer context to a new session with full briefing | ⛔ Not maintained |
 | [pi-web-browse](packages/pi-web-browse) | Deprecated — use [agent-skills](https://github.com/ogulcancelik/agent-skills) for web browsing | ⛔ Deprecated |
 
 ## Install
