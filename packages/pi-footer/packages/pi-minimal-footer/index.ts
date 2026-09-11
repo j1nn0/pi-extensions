@@ -815,6 +815,7 @@ export default function (pi: ExtensionAPI) {
   // Optional visibility toggles (default: enabled)
   const showCwd = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_CWD, true);
   const showBranch = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_BRANCH, true);
+  const showProvider = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_PROVIDER, false);
 
   function formatTokenCount(tokens: number): string {
     if (tokens >= 1_000_000) {
@@ -1087,7 +1088,11 @@ export default function (pi: ExtensionAPI) {
           }
 
           // Model + thinking
-          const modelName = ctx.model?.id?.split("/").pop() || "no-model";
+          const modelName = ctx.model
+            ? showProvider
+              ? `${ctx.model.provider}/${ctx.model.id}`
+              : ctx.model.id.split("/").pop() || "no-model"
+            : "no-model";
           const plainModelStr = theme.fg("muted", modelName);
           let modelStr = plainModelStr;
           if (ctx.model?.reasoning) {

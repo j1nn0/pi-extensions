@@ -40,6 +40,7 @@ Environment variables (all optional):
 | ------------------------------- | -------------------------------------------------------- | ------- |
 | `PI_MINIMAL_FOOTER_SHOW_CWD`    | Show current working directory in footer status line     | `1`     |
 | `PI_MINIMAL_FOOTER_SHOW_BRANCH` | Show git branch/dirty/ahead/behind in footer status line | `1`     |
+| `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show provider/full-model-id instead of the short model ID | `0`     |
 
 Accepted false values: `0`, `false`, `no`, `off` (case-insensitive).
 
