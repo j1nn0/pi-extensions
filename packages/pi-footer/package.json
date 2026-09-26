@@ -7,6 +7,7 @@
   ],
   "pi": {
     "extensions": [
+      "./packages/pi-anthropic-image-cap/index.ts",
       "./packages/pi-auto-permissions/index.ts",
       "./packages/pi-codex-compaction/index.ts",
       "./packages/pi-codex-subagents/index.ts",
