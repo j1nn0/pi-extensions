@@ -66,7 +66,7 @@ The footer adapts to narrow terminals by stacking lines vertically instead of th
 
 ### Claude Max usage bar not showing
 
-Anthropic's OAuth usage endpoint (`/api/oauth/usage`) has been returning persistent 429 (rate limit) errors since late March 2026, affecting all third-party tools that display Claude usage data (CodexBar, oh-my-claudecode, claude-pulse, etc.). This is an Anthropic-side issue — tracked in [claude-code#30930](https://github.com/anthropics/claude-code/issues/30930) and [claude-code#31021](https://github.com/anthropics/claude-code/issues/31021). The usage bar will start working again once Anthropic fixes the endpoint.
+Anthropic's OAuth usage endpoint (`/api/oauth/usage`) rate-limits requests by `User-Agent`. Anything other than Claude Code gets persistent 429s ([claude-code#30930](https://github.com/anthropics/claude-code/issues/30930)), so the footer identifies as `claude-code/<version>`. The limit is still tight, so with many pi sessions open the bar may briefly keep showing the last known values.
 
 ## Notes
 

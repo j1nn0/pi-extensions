@@ -354,6 +354,8 @@ async function fetchClaudeUsage(): Promise<UsageSnapshot> {
       headers: {
         Authorization: `Bearer ${token}`,
         "anthropic-beta": "oauth-2025-04-20",
+        // Other user agents land in a much stricter rate-limit bucket (persistent 429s).
+        "User-Agent": "claude-code/2.1.282",
       },
     });
 
