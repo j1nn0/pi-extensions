@@ -1,3 +1,25 @@
 node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# Logs
+logs/
+*.log
+
+# System
+.DS_Store
+*.swp
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build artifacts
+coverage/
 .pi/
 *.tgz
+config.json

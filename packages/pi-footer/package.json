@@ -1,42 +1,66 @@
 {
-  "name": "pi-extensions",
-  "private": true,
-  "description": "Pi extensions monorepo",
-  "workspaces": [
-    "packages/*"
+  "name": "@j1nn0/pi-footer",
+  "version": "0.1.0",
+  "description": "Minimal footer for pi with context gauge and subscription usage bars",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "footer",
+    "context",
+    "usage",
+    "coding-agent"
   ],
+  "license": "MIT",
+  "author": "j1nn0",
+  "contributors": [
+    "Can Celik (https://github.com/ogulcancelik)"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j1nn0/pi-footer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/j1nn0/pi-footer/issues"
+  },
+  "homepage": "https://github.com/j1nn0/pi-footer#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "type": "module",
+  "packageManager": "pnpm@11.28.3",
   "pi": {
     "extensions": [
-      "./packages/pi-anthropic-image-cap/index.ts",
-      "./packages/pi-auto-permissions/index.ts",
-      "./packages/pi-codex-compaction/index.ts",
-      "./packages/pi-codex-subagents/index.ts",
-      "./packages/pi-flicker/index.ts",
-      "./packages/pi-ghost/index.ts",
-      "./packages/pi-ghostty-theme-sync/index.ts",
-      "./packages/pi-goal/index.ts",
-      "./packages/pi-handoff/handoff.ts",
-      "./packages/pi-herdr/index.ts",
-      "./packages/pi-herdr-worktree-jump/index.ts",
-      "./packages/pi-minimal-footer/index.ts",
-      "./packages/pi-model-agents/index.ts",
-      "./packages/pi-model-thinking/index.ts",
-      "./packages/pi-quit-and-delete/index.ts",
-      "./packages/pi-session-recall/session-recall.ts",
-      "./packages/pi-sketch/extensions",
-      "./packages/pi-spar/index.ts",
-      "./packages/pi-ssh-tools/index.ts",
-      "./packages/pi-tmux/index.ts",
-      "./packages/pi-worktree/index.ts"
-    ],
-    "skills": [
-      "./packages/pi-web-browse/SKILL.md"
+      "./index.ts"
     ]
   },
+  "files": [
+    "index.ts",
+    "src/",
+    "assets/*.png",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.0.0",
+    "@earendil-works/pi-tui": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.80.10",
-    "@earendil-works/pi-coding-agent": "^0.80.10",
-    "@earendil-works/pi-tui": "^0.80.10",
-    "@sinclair/typebox": "^0.34.0"
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.8"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "pack:check": "pnpm pack --pack-destination /tmp"
   }
 }
