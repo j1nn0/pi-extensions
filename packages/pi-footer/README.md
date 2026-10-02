@@ -23,10 +23,14 @@ deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41
 ## Installation
 
 ```bash
-pi install git:github.com/j1nn0/pi-footer
+pi install npm:@j1nn0/pi-footer
 ```
 
-The package is not published to npm yet.
+Or install the latest `main` from GitHub:
+
+```bash
+pi install git:github.com/j1nn0/pi-footer
+```
 
 To try it for a single session from a local checkout:
 
