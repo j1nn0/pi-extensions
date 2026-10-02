@@ -112,10 +112,13 @@ export async function createTestEnvironment(fixtures = defaultFixtures()) {
 
   const requests: RecordedRequest[] = [];
   const unexpectedUrls: string[] = [];
+  const gates = new Map<string, Promise<void>>();
   vi.stubGlobal("fetch", (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = String(input);
-    const fixture = fixtures.get(url);
     requests.push({ url, method: (init.method ?? "GET").toUpperCase(), headers: new Headers(init.headers) });
+    const gate = gates.get(url);
+    if (gate) await gate;
+    const fixture = fixtures.get(url);
     if (!fixture) {
       unexpectedUrls.push(url);
       throw new Error(`Unexpected test fetch URL: ${url}`);
@@ -135,6 +138,15 @@ export async function createTestEnvironment(fixtures = defaultFixtures()) {
     requests,
     setResponse(url: string, response: ResponseFixture) {
       fixtures.set(url, response);
+    },
+    /** Hold responses for a URL until the returned release function is called. */
+    holdResponse(url: string): () => void {
+      let release = () => {};
+      gates.set(url, new Promise<void>((resolve) => (release = resolve)));
+      return () => {
+        gates.delete(url);
+        release();
+      };
     },
     requestSummary() {
       return requests.map(({ url, method, headers }) => ({

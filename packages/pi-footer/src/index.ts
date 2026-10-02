@@ -50,29 +50,10 @@ export default function (pi: ExtensionAPI): void {
     if (showContextMode) contextMode.refresh();
   }
 
-  /** Fetch usage for the active provider. Shows cached data immediately,
-   *  then fetches fresh in the background. Discards results if provider
-   *  changed while the fetch was in flight. */
-  function fetchUsage(model: ProviderModel): void {
-    const provider = detectProvider(model);
-    if (!provider) {
-      activeProvider = null;
-      latestUsage = null;
-      stopRefreshTimer();
-      tuiRef?.requestRender();
-      return;
-    }
-
-    activeProvider = provider;
-
-    // Show cached data immediately if available
+  /** Fetch fresh usage in the background. Keeps cached data on transient
+   *  errors and discards results if the provider changed in flight. */
+  function refreshUsage(provider: string): void {
     const cached = getCachedUsage(provider);
-    if (cached && cached.windows.length > 0) {
-      latestUsage = cached;
-      tuiRef?.requestRender();
-    }
-
-    // Fetch fresh in background — keep cached data on transient errors
     fetchUsageForProvider(provider)
       .then((usage) => {
         if (!usage || activeProvider !== provider) return;
@@ -84,23 +65,35 @@ export default function (pi: ExtensionAPI): void {
       .catch(() => {});
   }
 
+  /** Switch quota tracking to the model's provider. Shows only that provider's
+   *  cached data (or nothing), fetches fresh data, and runs the refresh timer
+   *  only while a supported provider is active. */
+  function selectUsageProvider(model: ProviderModel): void {
+    const provider = detectProvider(model);
+    if (!provider) {
+      activeProvider = null;
+      latestUsage = null;
+      stopRefreshTimer();
+      tuiRef?.requestRender();
+      return;
+    }
+
+    activeProvider = provider;
+
+    // Never keep showing another provider's quota while this one loads.
+    const cached = getCachedUsage(provider);
+    latestUsage = cached && cached.windows.length > 0 ? cached : null;
+    tuiRef?.requestRender();
+
+    refreshUsage(provider);
+    startRefreshTimer(); // restart the 5min countdown since we just fetched
+  }
+
   /** Start (or restart) the periodic refresh timer. */
   function startRefreshTimer(): void {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {
-      if (activeProvider) {
-        const provider = activeProvider;
-        const cached = getCachedUsage(provider);
-        fetchUsageForProvider(provider)
-          .then((usage) => {
-            if (!usage || activeProvider !== provider) return;
-            if (usage.windows.length === 0 && usage.error && cached?.windows.length) return;
-            cacheUsage(provider, usage);
-            latestUsage = usage;
-            tuiRef?.requestRender();
-          })
-          .catch(() => {});
-      }
+      if (activeProvider) refreshUsage(activeProvider);
     }, USAGE_REFRESH_INTERVAL);
   }
 
@@ -128,10 +121,7 @@ export default function (pi: ExtensionAPI): void {
 
       // Initial fetch inside factory — tui is guaranteed available here,
       // so requestRender() will work when the async fetch completes.
-      if (ctx.model?.provider) {
-        fetchUsage(ctx.model);
-        startRefreshTimer();
-      }
+      if (ctx.model?.provider) selectUsageProvider(ctx.model);
 
       contextMode.setSession(ctx.sessionManager.getSessionFile());
       refreshContextMode();
@@ -180,7 +170,6 @@ export default function (pi: ExtensionAPI): void {
   // Refresh when model changes — fetch immediately, restart timer
   pi.on("model_select", (event, _ctx: ExtensionContext) => {
     if (!event.model?.provider) return;
-    fetchUsage(event.model);
-    startRefreshTimer(); // reset the 5min countdown since we just fetched
+    selectUsageProvider(event.model);
   });
 }
