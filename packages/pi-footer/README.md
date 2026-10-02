@@ -1,23 +1,24 @@
 # @j1nn0/pi-footer
 
-A Pi extension that replaces Pi's default footer with a compact status display:
-working directory, Git branch, model, thinking level, and a context gauge on the
-first line, followed by subscription quota bars for the active provider.
+A Pi extension that replaces Pi's default footer with a compact two-line status
+display modeled on a Claude Code StatusLine: model and thinking state, a context
+gauge, prompt-cache usage, subscription quota windows with reset times, session
+duration, Git branch, and the optional Context Mode "this chat" amount.
 
 This project is a standalone fork of [`pi-minimal-footer`](https://github.com/ogulcancelik/pi-extensions/tree/main/packages/pi-minimal-footer)
 by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the
-`ogulcancelik/pi-extensions` monorepo. The footer output and provider behavior
-are unchanged from the original; this repository packages it on its own and
-targets Pi 1.0.
+`ogulcancelik/pi-extensions` monorepo.
 
-![Claude Max](assets/claude.png)
-
-![OpenAI Codex](assets/codex.png)
+```text
+deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41% · 161.0k/384.0k │ cache R424.0k/W2.1k
+5h 22% ↻ 15:03 │ 7d 66% ↻ 10/08 10:00 │ 6h29m │ main * ↑2 │ ctx-mode 426KB
+```
 
 ## Requirements
 
 - Pi `>= 1.0.0` (`@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are peer dependencies provided by Pi)
 - Node.js `>= 22.19.0` (Pi 1.0's own requirement)
+- Optional: [Context Mode](https://github.com/mksglu/context-mode) for the `ctx-mode` segment
 
 ## Installation
 
@@ -35,122 +36,162 @@ pi -e ./index.ts
 
 ## What it shows
 
+### Line 1 — model, thinking, context, cache
+
 ```text
-~/path/to/project > main * ↑1 ↓2 > model-id > high > ctx ━━━━━─────── 41% 82k/200k
-Codex > 5h ━━━━━━━─── 72% 3h > Week ━───────── 14% 4d
+<model> · <thinking level> · think ON │ ctx <bar> <used%> · <tokens>/<window> [warning] │ cache R<read>/W<write>
 ```
 
-### Status line
+- **Model** — the last path segment of the model ID (`deepseek-v4.1-flash`),
+  or `provider/model-id` when `PI_FOOTER_SHOW_PROVIDER` is enabled.
+- **Thinking** — for reasoning models, Pi's live thinking level
+  (`ctx.thinkingLevel`) followed by `think ON`, or `think OFF` when the level is
+  `off`. Non-reasoning models show neither.
+- **Context gauge** — a 10-cell bar, the used percentage (rounded down), and
+  token counts from Pi's own `ctx.getContextUsage()`. Warnings: `!` from 70%,
+  `⚠` from 85%, `COMPACT` from 95%. Right after a compaction, before the next
+  response, Pi does not know the context size; the gauge then shows
+  `ctx ░░░░░░░░░░ ?% · ?/384.0k` instead of a misleading number.
+- **Cache** — prompt-cache tokens of the latest completed assistant response:
+  `R` (cache read) when above zero and `W` (cache write) from 1k. The segment is
+  omitted when neither applies or after a compaction.
 
-- **Working directory** — `ctx.cwd`, with the home directory shortened to `~`.
-- **Git branch** — branch name in green when clean and yellow with ` *` when the
-  working tree has changes, plus `↑N` (ahead, green) and `↓N` (behind, red).
-  Nothing is shown for a detached HEAD or outside a Git repository.
-- **Model** — the last path segment of the model ID, or `provider/model-id`
-  when `PI_MINIMAL_FOOTER_SHOW_PROVIDER` is enabled.
-- **Thinking level** — shown after the model for reasoning models when the
-  session's thinking level is not `off`.
-- **Context gauge** — a 12-cell bar with the used percentage and
-  `used/total` token counts. Colors: green below 50%, accent from 50%, yellow
-  from 70%, red from 90%.
+Token counts use one decimal: `950`, `424.5k`, `1.0M`.
 
-The context gauge uses the token usage of the last assistant message that was
-not aborted (`input + output + cacheRead + cacheWrite`) divided by the model's
-context window. It does not estimate messages sent after that response, and it
-is not reset after compaction until the next response arrives, so it can differ
-from Pi's built-in footer.
+### Line 2 — quota, duration, Git, Context Mode
 
-### Usage line
+```text
+<window> <used%> ↻ <reset> │ ... │ <duration> │ [cwd] │ <branch> │ ctx-mode <amount>
+```
 
-When the current model's provider is supported and its quota request succeeds,
-a second line shows the provider label followed by one bar per quota window,
-with the used percentage and the time until reset (`45m`, `2h38m`, `6d3h`,
-`now`). Usage bars are green below 85%, yellow from 85%, and red from 92%.
+- **Quota windows** — the subscription windows of the current model's provider
+  (see below), each with the used percentage (rounded down) and, when the
+  provider reports one, the local reset time: `↻ HH:MM` for windows measured
+  in hours, `↻ MM/DD HH:MM` for longer windows. Percentages are yellow from 85%
+  and red from 92%.
+- **Duration** — wall-clock age of the logical Pi session, `42m` or `2h03m`
+  (hours keep counting past a day, e.g. `28h04m`). It is measured from the
+  session header timestamp, so resumed sessions keep their age; forked sessions
+  start a new header and a new age. The footer re-renders once a minute.
+- **cwd** — optional, off by default (see Configuration).
+- **Git** — branch name, ` *` when the working tree has changes, `↑N` ahead and
+  `↓N` behind its upstream. A detached HEAD shows its short commit id.
+- **Context Mode** — `ctx-mode <amount>`: Context Mode's "this chat" amount for
+  the current Pi session. Lifetime statistics and other Context Mode details are
+  not shown.
 
 ### Narrow terminals
 
-Blocks are joined with `>` while they fit and wrap onto additional lines when
-they do not. Within a block, the footer falls back to shorter variants before
-truncating: the location falls back to the directory alone and then to the
-branch alone, the thinking level is dropped, the context gauge drops token counts and shrinks to 10, 8, 6,
-or 4 cells, and usage windows shrink to 8 cells, drop the reset time, and then
-shrink to 6 or 4 cells. Every line is truncated to the terminal width.
+The footer keeps two lines and drops detail by priority as the width shrinks:
+
+- Line 1: cache, then `think ON`, then token counts, then the thinking level,
+  then the bar. The model name is shortened before the context percentage is
+  dropped.
+- Line 2: Context Mode, then cwd, then duration, then reset times, then quota
+  windows from the last one. The branch stays longest.
+
+Every line is truncated to the terminal width with ANSI-aware Pi TUI helpers.
+
+```text
+# 80 columns
+gpt-6-luna · high · think ON │ ctx ████░░░░░░ 41% · 161.0k/384.0k
+5h 71% ↻ 15:00 │ 7d 14% ↻ 10/06 12:00 │ 6h29m │ main * ↑2 │ ctx-mode 426KB
+
+# 40 columns
+gpt-6-luna · high │ ctx ████░░░░░░ 41%
+5h 71% │ 7d 14% │ main * ↑2
+```
 
 ## Supported providers
 
-The usage line is selected from the Pi provider of the current model.
+Quota windows are shown only for these providers. Other models still get every
+other segment.
 
-| Pi provider         | Label         | Windows                                                                          | Credentials (in lookup order)                                                                                      |
-| ------------------- | ------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `anthropic`         | `Claude`      | `5h`, `Week`                                                                     | `anthropic.access` in Pi's `auth.json`; macOS Keychain item `Claude Code-credentials`                              |
-| `openai-codex`      | `Codex`       | primary (`5h` by default) and secondary (`Week`) windows                         | `openai-codex.access` (+ `accountId`) in `auth.json`; `$CODEX_HOME/auth.json` or `~/.codex/auth.json`              |
-| `github-copilot`    | `Copilot`     | `Premium`, `Chat` (omitted when unlimited)                                       | `github-copilot.refresh` in `auth.json`                                                                            |
-| `google-gemini-cli` | `Gemini`      | `Pro`, `Flash` (lowest remaining fraction per family, no reset time)             | `google-gemini-cli.access` in `auth.json`; `~/.gemini/oauth_creds.json`                                            |
-| `minimax`           | `MiniMax`     | interval (`5h` by default) and `Week` from the Token Plan `general` bucket       | `MINIMAX_API_KEY`; `minimax` in `auth.json`                                                                        |
-| `minimax-cn`        | `MiniMax CN`  | same as MiniMax, China endpoint                                                  | `MINIMAX_CN_API_KEY`; `minimax-cn` in `auth.json`                                                                  |
-| `kimi-coding`       | `Kimi Coding` | each plan limit window (`5h` by default) and `Weekly`                            | `KIMI_API_KEY`; `kimi-coding` in `auth.json`                                                                       |
-| `opencode-go`       | `OpenCode Go` | `5h`, `Week`, `Month`                                                            | `OPENCODE_API_KEY`; `opencode-go` in `auth.json`                                                                   |
+| Provider     | Detected by                                                            | Windows                                   | Credentials (in lookup order)                                                                        |
+| ------------ | ---------------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| OpenAI Codex | Pi provider `openai-codex`                                             | primary (`5h`), secondary (`7d`)          | `openai-codex.access` (+ `accountId`) in Pi's `auth.json`; `$CODEX_HOME/auth.json` or `~/.codex/auth.json` |
+| OpenCode Go  | Pi provider `opencode-go`                                              | `5h`, `7d`, `mo`                          | `OPENCODE_API_KEY`; `opencode-go` in Pi's `auth.json`                                                |
+| Command Code | a Pi provider whose `baseUrl` host is `api.commandcode.ai`             | `5h`, `7d`                                | `COMMAND_CODE_API_KEY`; `apiKey` in `~/.commandcode/auth.json` (written by `cmd login`)              |
 
-`auth.json` is Pi's credential file at `~/.pi/agent/auth.json` (populated by
-`/login`). For MiniMax, Kimi Coding, and OpenCode Go, an `auth.json` entry may
-be a string or an object with `key`, `access`, or `refresh`; the value may name
-an environment variable (`MY_API_KEY`) or start with `!` to run a command whose
-output is the key, matching Pi's own `auth.json` conventions.
-
-Models from any other provider show no usage line.
+- Codex window labels come from the reported window length (for example `8h`);
+  `5h`/`7d` are used only when the length is missing.
+- Command Code is configured in Pi as a custom provider in `models.json`, so it
+  is recognized by its API host rather than by its user-chosen provider id or
+  by model ids, which other providers may share. The footer reads the same
+  credential as the `cmd` CLI and calls the same read-only endpoints the CLI's
+  usage view uses (`/alpha/whoami` once per process for the organization id,
+  then `/alpha/billing/credits`). The percentage is `used / cap` of each window.
+- Pi's `auth.json` is `~/.pi/agent/auth.json` (populated by `/login`). For
+  OpenCode Go, an entry may be a string or an object with `key`, `access`, or
+  `refresh`; the value may name an environment variable or start with `!` to
+  run a command whose output is the key, matching Pi's own conventions.
 
 ## Refresh behavior
 
-- Usage is fetched when the footer is created at session start, immediately
-  when the model changes, and every 5 minutes for the active provider.
+- Quota is fetched when the footer is created at session start, immediately
+  when the model changes, and every 5 minutes for the active provider. Requests
+  time out after 5 seconds.
 - Results are cached per provider for the lifetime of the Pi process. Cached
-  values are shown immediately after a model switch while a fresh request runs.
-- If a refresh fails and earlier data exists, the earlier data stays visible.
-- Each quota request times out after 5 seconds.
+  values are shown immediately after a model switch while a fresh request runs,
+  and stay visible when a refresh fails.
 - Git state is read with `git status --porcelain=v2 --branch` (1 second
   timeout) in the directory Pi was started from, at session start, when Pi
   reports a branch change, and at the end of every turn.
+- Context Mode is queried in the background at session start and at the end of
+  every turn; the last value is kept if a later query fails.
+- Rendering itself performs no network requests, process launches, or file
+  reads.
+
+## Context Mode
+
+Context Mode is optional and not a dependency. When the `context-mode` command
+is on `PATH`, the footer runs `context-mode statusline` (3 second timeout) with
+the Pi session id that Context Mode's Pi adapter uses and with
+`CLAUDE_CONFIG_DIR=~/.pi`, so the statusline reads the Pi adapter's session
+store (`~/.pi/context-mode/sessions`). Only the `<number><unit> this chat` value
+is extracted from its output.
+
+If Context Mode is not installed, fails, times out, has no data for the session
+yet, or prints something else, the segment is omitted without any warning. Set
+`PI_FOOTER_SHOW_CONTEXT_MODE=0` to never run it.
 
 ## Configuration
 
-Optional environment variables, read when the extension is loaded. The
-`PI_MINIMAL_FOOTER_` prefix is kept for compatibility with the original package.
+Optional environment variables, read when the extension is loaded. Each
+`PI_FOOTER_*` variable takes precedence; the legacy `PI_MINIMAL_FOOTER_*` name
+from the original package is used when the new one is unset, empty, or invalid.
 
-| Variable                          | Description                                          | Default |
-| --------------------------------- | ---------------------------------------------------- | ------- |
-| `PI_MINIMAL_FOOTER_SHOW_CWD`      | Show the working directory                           | `1`     |
-| `PI_MINIMAL_FOOTER_SHOW_BRANCH`   | Show Git branch, dirty marker, and ahead/behind      | `1`     |
-| `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show `provider/model-id` instead of the short ID     | `0`     |
+| Variable                       | Legacy name                       | Description                                       | Default |
+| ------------------------------ | --------------------------------- | ------------------------------------------------- | ------- |
+| `PI_FOOTER_SHOW_CWD`           | `PI_MINIMAL_FOOTER_SHOW_CWD`      | Show the working directory on line 2              | `0`     |
+| `PI_FOOTER_SHOW_BRANCH`        | `PI_MINIMAL_FOOTER_SHOW_BRANCH`   | Show Git branch, dirty marker, and ahead/behind   | `1`     |
+| `PI_FOOTER_SHOW_PROVIDER`      | `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show `provider/model-id` instead of the short ID  | `0`     |
+| `PI_FOOTER_SHOW_CONTEXT_MODE`  | `PI_MINIMAL_FOOTER_SHOW_CONTEXT_MODE` | Query Context Mode and show `ctx-mode`        | `1`     |
 
 True values: `1`, `true`, `yes`, `on`. False values: `0`, `false`, `no`, `off`.
-Values are case-insensitive and trimmed; empty or unrecognized values use the
-default.
+Values are case-insensitive and trimmed.
 
 ## Security
 
 Credentials are read from the locations listed above only when a quota request
-is made. They are sent only to the corresponding provider's quota endpoint, are
+is made. They are sent only to the corresponding provider's own endpoints, are
 never rendered, logged, or included in error values, and are not written
-anywhere.
+anywhere. Command Code organization ids are cached in memory keyed by a hash of
+the API key, not the key itself. Context Mode output is reduced to the parsed
+"this chat" amount.
 
 ## Known limitations
 
-- **Claude** — Anthropic's `/api/oauth/usage` endpoint rate-limits by
-  `User-Agent`; other clients receive persistent 429 responses
-  ([claude-code#30930](https://github.com/anthropics/claude-code/issues/30930)),
-  so the footer identifies as `claude-code/<version>`. With many Pi sessions
-  open the bar may keep showing the last known values. The Keychain fallback is
-  macOS-only.
+- **Command Code monthly allowance** — the API does not report a monthly usage
+  percentage; the `cmd` CLI derives it from a plan table built into the CLI, so
+  the footer shows only the 5-hour and weekly windows.
 - **Undocumented endpoints** — the Codex (`chatgpt.com/backend-api/wham/usage`),
-  Copilot (`api.github.com/copilot_internal/user`), and Gemini
-  (`cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`) quota APIs are
-  internal and may change without notice.
-- **Window labels** — a window whose length is not close to a day or a week is
-  labeled with the provider's default label (for example an 8-hour Kimi window
-  is shown as `5h`).
-- **Gemini** — the quota API returns no reset time, so none is shown.
-- **Copilot** — both windows use the account's single quota reset date.
-- **Missing credentials or failed requests** — the usage line is simply not
+  OpenCode Go, and Command Code (`/alpha/...`) quota APIs are internal and may
+  change without notice.
+- **Context Mode coupling** — the `ctx-mode` segment relies on Context Mode's
+  Pi adapter storing sessions under `~/.pi/context-mode/sessions` with session
+  ids derived from the Pi session file path, as of Context Mode 1.0.169.
+- **Missing credentials or failed requests** — the quota windows are simply not
   shown; no error is displayed.
 - The footer replaces Pi's default footer entirely.
 
@@ -163,8 +204,8 @@ pnpm test
 pnpm pack:check
 ```
 
-Tests run against Pi 1.0 with mocked provider responses and never make network
-requests.
+Tests run against Pi 1.0 with mocked provider responses and a mocked
+`context-mode` command; they never make network requests.
 
 ## License
 

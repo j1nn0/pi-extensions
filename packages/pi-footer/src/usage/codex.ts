@@ -1,5 +1,5 @@
 import { getCodexToken } from "../auth.ts";
-import { clampPercent, formatResetTime, getWindowLabel } from "../format.ts";
+import { clampPercent, getWindowLabel } from "../format.ts";
 import { fetchWithTimeout } from "./fetch.ts";
 import type { RateWindow, UsageSnapshot } from "../types.ts";
 
@@ -16,34 +16,25 @@ interface CodexUsageResponse {
   };
 }
 
+function parseCodexWindow(window: CodexUsageWindow, fallbackLabel: string): RateWindow {
+  const durationMs =
+    typeof window.limit_window_seconds === "number" ? window.limit_window_seconds * 1000 : undefined;
+  return {
+    label: getWindowLabel(durationMs, fallbackLabel),
+    usedPercent: clampPercent(window.used_percent || 0),
+    resetsAt: window.reset_at ? window.reset_at * 1000 : undefined,
+  };
+}
+
 export function parseCodexUsage(body: unknown): UsageSnapshot {
   const data = body as CodexUsageResponse;
-  const providerLabel = "Codex";
   const windows: RateWindow[] = [];
 
-  if (data.rate_limit?.primary_window) {
-    const pw = data.rate_limit.primary_window;
-    const resetDate = pw.reset_at ? new Date(pw.reset_at * 1000) : undefined;
-    const durationMs = typeof pw.limit_window_seconds === "number" ? pw.limit_window_seconds * 1000 : undefined;
-    windows.push({
-      label: getWindowLabel(durationMs, "5h"),
-      usedPercent: clampPercent(pw.used_percent || 0),
-      resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
-    });
-  }
+  // Codex documents the primary window as the 5-hour limit and the secondary as weekly.
+  if (data.rate_limit?.primary_window) windows.push(parseCodexWindow(data.rate_limit.primary_window, "5h"));
+  if (data.rate_limit?.secondary_window) windows.push(parseCodexWindow(data.rate_limit.secondary_window, "7d"));
 
-  if (data.rate_limit?.secondary_window) {
-    const sw = data.rate_limit.secondary_window;
-    const resetDate = sw.reset_at ? new Date(sw.reset_at * 1000) : undefined;
-    const durationMs = typeof sw.limit_window_seconds === "number" ? sw.limit_window_seconds * 1000 : undefined;
-    windows.push({
-      label: getWindowLabel(durationMs, "Week"),
-      usedPercent: clampPercent(sw.used_percent || 0),
-      resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
-    });
-  }
-
-  return { provider: providerLabel, windows, fetchedAt: Date.now() };
+  return { provider: "Codex", windows, fetchedAt: Date.now() };
 }
 
 export async function fetchCodexUsage(): Promise<UsageSnapshot> {

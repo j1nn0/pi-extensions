@@ -1,123 +1,11 @@
-import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { formatTokenCount } from "./format.ts";
-import type { ContextInfo, GitCache, RateWindow, UsageSnapshot } from "./types.ts";
+import { formatDuration, formatResetClock, formatTokenCount } from "./format.ts";
+import type { CacheUsage, GitCache, RateWindow, UsageSnapshot } from "./types.ts";
 
-export const CTX_GAUGE_WIDTH = 12;
-export const BAR_FILLED = "━";
-export const BAR_EMPTY = "─";
-
-export function fitFooterSegment(width: number, variants: string[]): string {
-  const safeWidth = Math.max(1, width);
-
-  for (const variant of variants) {
-    if (visibleWidth(variant) <= safeWidth) return variant;
-  }
-
-  return truncateToWidth(variants[variants.length - 1] || "", safeWidth);
-}
-
-export function wrapFooterSegments(segments: string[], width: number, sep: string): string[] {
-  const safeWidth = Math.max(1, width);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const segment of segments.filter(Boolean)) {
-    const fitted = truncateToWidth(segment, safeWidth);
-
-    if (!current) {
-      current = fitted;
-      continue;
-    }
-
-    const candidate = current + sep + fitted;
-    if (visibleWidth(candidate) <= safeWidth) {
-      current = candidate;
-      continue;
-    }
-
-    lines.push(truncateToWidth(current, safeWidth));
-    current = fitted;
-  }
-
-  if (current) lines.push(truncateToWidth(current, safeWidth));
-  return lines;
-}
-
-export function renderContextGauge(
-  percentage: number,
-  theme: Theme,
-  used?: number,
-  total?: number,
-  options?: { barWidth?: number; includeCounts?: boolean }
-): string {
-  const barWidth = Math.max(4, options?.barWidth ?? CTX_GAUGE_WIDTH);
-  const clamped = Math.max(0, Math.min(100, percentage));
-  const filled = Math.round((clamped / 100) * barWidth);
-  const empty = barWidth - filled;
-
-  let color: ThemeColor;
-  if (clamped >= 90) color = "error";
-  else if (clamped >= 70) color = "warning";
-  else if (clamped >= 50) color = "accent";
-  else color = "success";
-
-  const bar = theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(empty));
-  const pct = `${Math.round(clamped)}%`;
-  const counts =
-    options?.includeCounts === false || used === undefined || !total
-      ? ""
-      : ` ${formatTokenCount(used)}/${formatTokenCount(total)}`;
-
-  return theme.fg("dim", "ctx ") + bar + " " + theme.fg("dim", pct + counts);
-}
-
-export function renderUsageBar(usedPercent: number, barWidth: number, theme: Theme): string {
-  const clamped = Math.max(0, Math.min(100, usedPercent));
-  const filled = Math.round((clamped / 100) * barWidth);
-  const empty = barWidth - filled;
-
-  let color: ThemeColor;
-  if (clamped >= 92) color = "error";
-  else if (clamped >= 85) color = "warning";
-  else color = "success";
-
-  return theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(empty));
-}
-
-export function renderUsageWindow(
-  window: RateWindow,
-  theme: Theme,
-  options?: { barWidth?: number; includeReset?: boolean }
-): string {
-  const dim = (s: string) => theme.fg("dim", s);
-  const bar = renderUsageBar(window.usedPercent, Math.max(4, options?.barWidth ?? 10), theme);
-  const pct = dim(`${Math.round(window.usedPercent)}%`);
-  const timeStr = options?.includeReset === false || !window.resetsIn ? "" : " " + dim(window.resetsIn);
-  return `${dim(window.label)} ${bar} ${pct}${timeStr}`;
-}
-
-export function renderUsageLine(usage: UsageSnapshot, width: number, theme: Theme): string[] {
-  if (!usage.windows.length) return [];
-
-  const dim = (s: string) => theme.fg("dim", s);
-  const sep = " " + dim(">") + " ";
-  const segments: string[] = [theme.fg("accent", usage.provider)];
-
-  for (const w of usage.windows) {
-    segments.push(
-      fitFooterSegment(width, [
-        renderUsageWindow(w, theme, { barWidth: 10, includeReset: true }),
-        renderUsageWindow(w, theme, { barWidth: 8, includeReset: true }),
-        renderUsageWindow(w, theme, { barWidth: 8, includeReset: false }),
-        renderUsageWindow(w, theme, { barWidth: 6, includeReset: false }),
-        renderUsageWindow(w, theme, { barWidth: 4, includeReset: false }),
-      ])
-    );
-  }
-
-  return wrapFooterSegments(segments, width, sep);
-}
+export const CONTEXT_BAR_WIDTH = 10;
+export const BAR_FILLED = "█";
+export const BAR_EMPTY = "░";
 
 export interface FooterModel {
   provider: string;
@@ -127,107 +15,211 @@ export interface FooterModel {
 
 export interface FooterRenderInput {
   width: number;
-  cwd: string;
-  home: string | undefined;
-  gitCache: GitCache | null;
-  showCwd: boolean;
-  showBranch: boolean;
-  showProvider: boolean;
-  model: FooterModel | null | undefined;
-  thinkingLevel: string;
-  contextInfo: ContextInfo;
-  latestUsage: UsageSnapshot | null;
   theme: Theme;
+  model: FooterModel | null | undefined;
+  showProvider: boolean;
+  thinkingLevel: string | undefined;
+  context: ContextUsage | undefined;
+  cache: CacheUsage | undefined;
+  usage: UsageSnapshot | null;
+  durationMs: number | undefined;
+  /** Already shortened working directory, or undefined when hidden. */
+  cwd: string | undefined;
+  /** Git state, or null when hidden or unavailable. */
+  git: GitCache | null;
+  contextMode: string | undefined;
 }
 
-export function renderFooterStatusLine({
-  width,
-  cwd,
-  home,
-  gitCache,
-  showCwd,
-  showBranch,
-  showProvider,
-  model,
-  thinkingLevel,
-  contextInfo,
-  latestUsage,
-  theme,
-}: FooterRenderInput): string[] {
-  const { percentage, used: ctxUsed, total: ctxTotal } = contextInfo;
+function separator(theme: Theme): string {
+  return " " + theme.fg("dim", "│") + " ";
+}
 
-  // Build parts for status line
-  let pwd = cwd;
-  if (home && pwd.startsWith(home)) {
-    pwd = `~${pwd.slice(home.length)}`;
+function dot(theme: Theme): string {
+  return " " + theme.fg("dim", "·") + " ";
+}
+
+/** The first variant that fits, otherwise the last one truncated. */
+function fitVariants(width: number, variants: string[]): string {
+  for (const variant of variants) {
+    if (visibleWidth(variant) <= width) return variant;
+  }
+  return truncateToWidth(variants[variants.length - 1] ?? "", width);
+}
+
+// ============ Line 1: model, thinking, context, cache ============
+
+export function contextWarning(percent: number): string {
+  if (percent >= 95) return "COMPACT";
+  if (percent >= 85) return "⚠";
+  if (percent >= 70) return "!";
+  return "";
+}
+
+function contextColor(percent: number): ThemeColor {
+  if (percent >= 85) return "error";
+  if (percent >= 70) return "warning";
+  return "success";
+}
+
+export function renderContextBar(percent: number | null, theme: Theme): string {
+  const filled = percent === null ? 0 : Math.max(0, Math.min(CONTEXT_BAR_WIDTH, Math.floor((percent * CONTEXT_BAR_WIDTH) / 100)));
+  const color = percent === null ? "dim" : contextColor(percent);
+  return theme.fg(color, BAR_FILLED.repeat(filled)) + theme.fg("dim", BAR_EMPTY.repeat(CONTEXT_BAR_WIDTH - filled));
+}
+
+/** Context segment variants from most to least detailed. */
+export function renderContextVariants(context: ContextUsage | undefined, theme: Theme): string[] {
+  const label = theme.fg("dim", "ctx");
+  const known = context?.percent !== null && context?.percent !== undefined;
+  const percent = known ? Math.max(0, Math.floor(context!.percent!)) : null;
+  const percentText = theme.fg("muted", percent === null ? "?%" : `${percent}%`);
+  const warningText = percent === null ? "" : contextWarning(percent);
+  const warning = warningText ? " " + theme.fg(percent! >= 95 ? "error" : "warning", warningText) : "";
+
+  let counts = "";
+  if (context && context.contextWindow > 0) {
+    const used = context.tokens === null ? "?" : formatTokenCount(context.tokens);
+    counts = dot(theme) + theme.fg("muted", `${used}/${formatTokenCount(context.contextWindow)}`);
   }
 
-  let branchStr = "";
-  if (showBranch && gitCache?.branch) {
-    const branchColor: ThemeColor = gitCache.dirty ? "warning" : "success";
-    branchStr = theme.fg(branchColor, gitCache.branch);
-    if (gitCache.dirty) branchStr += theme.fg("warning", " *");
-    if (gitCache.ahead) branchStr += theme.fg("success", ` ↑${gitCache.ahead}`);
-    if (gitCache.behind) branchStr += theme.fg("error", ` ↓${gitCache.behind}`);
-  }
+  const bar = renderContextBar(percent, theme);
+  const full = `${label} ${bar} ${percentText}${counts}${warning}`;
+  const withBar = `${label} ${bar} ${percentText}${warning}`;
+  const compact = `${label} ${percentText}${warning}`;
+  return counts ? [full, withBar, compact] : [withBar, compact];
+}
 
-  // Model + thinking
-  const modelName = model
-    ? showProvider
-      ? `${model.provider}/${model.id}`
-      : model.id.split("/").pop() || "no-model"
-    : "no-model";
-  const plainModelStr = theme.fg("muted", modelName);
-  let modelStr = plainModelStr;
-  if (model?.reasoning) {
-    if (thinkingLevel !== "off") {
-      modelStr += " " + theme.fg("dim", ">") + " " + theme.fg("accent", thinkingLevel);
-    }
-  }
+export function renderModelName(model: FooterModel | null | undefined, showProvider: boolean): string {
+  if (!model) return "no-model";
+  return showProvider ? `${model.provider}/${model.id}` : model.id.split("/").pop() || "no-model";
+}
 
-  const sep = " " + theme.fg("dim", ">") + " ";
-  const lines: string[] = [];
+/** Model segment variants: with level and think state, with level only, model only. */
+export function renderModelVariants(
+  model: FooterModel | null | undefined,
+  showProvider: boolean,
+  thinkingLevel: string | undefined,
+  theme: Theme
+): string[] {
+  const name = theme.fg("accent", renderModelName(model, showProvider));
+  if (!model?.reasoning) return [name];
 
-  const pwdStr = showCwd ? theme.fg("accent", pwd) : "";
-  const locationVariants: string[] = [];
-  if (pwdStr && branchStr) locationVariants.push(pwdStr + sep + branchStr);
-  if (pwdStr) locationVariants.push(pwdStr);
-  if (branchStr) locationVariants.push(branchStr);
-  const locationBlock = locationVariants.length > 0 ? fitFooterSegment(width, locationVariants) : "";
+  const level = thinkingLevel ?? "off";
+  if (level === "off") return [name + dot(theme) + theme.fg("dim", "think OFF"), name];
 
-  const statusBlocks = [
-    locationBlock,
-    fitFooterSegment(width, modelStr === plainModelStr ? [plainModelStr] : [modelStr, plainModelStr]),
-    fitFooterSegment(width, [
-      renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
-        barWidth: CTX_GAUGE_WIDTH,
-        includeCounts: true,
-      }),
-      renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
-        barWidth: 10,
-        includeCounts: false,
-      }),
-      renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
-        barWidth: 8,
-        includeCounts: false,
-      }),
-      renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
-        barWidth: 6,
-        includeCounts: false,
-      }),
-      renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
-        barWidth: 4,
-        includeCounts: false,
-      }),
-    ]),
+  const withLevel = name + dot(theme) + theme.fg("muted", level);
+  return [withLevel + dot(theme) + theme.fg("muted", "think ON"), withLevel, name];
+}
+
+export function renderCache(cache: CacheUsage | undefined, theme: Theme): string {
+  if (!cache) return "";
+  const showRead = cache.read > 0;
+  const showWrite = cache.write >= 1000;
+  if (!showRead && !showWrite) return "";
+
+  let value = "";
+  if (showRead) value += `R${formatTokenCount(cache.read)}`;
+  if (showWrite) value += `${showRead ? "/" : ""}W${formatTokenCount(cache.write)}`;
+  return theme.fg("dim", "cache") + " " + theme.fg("muted", value);
+}
+
+export function renderFirstLine(input: FooterRenderInput): string {
+  const { width, theme } = input;
+  const sep = separator(theme);
+  const models = renderModelVariants(input.model, input.showProvider, input.thinkingLevel, theme);
+  const contexts = renderContextVariants(input.context, theme);
+  const cache = renderCache(input.cache, theme);
+
+  const modelFull = models[0]!;
+  const modelLevel = models[1] ?? modelFull;
+  const modelOnly = models[models.length - 1]!;
+  const contextFull = contexts[0]!;
+  const contextBar = contexts[contexts.length - 2] ?? contextFull;
+  const contextCompact = contexts[contexts.length - 1]!;
+
+  // Drop detail in priority order: cache, think state, token counts, level, bar.
+  const candidates = [
+    ...(cache ? [modelFull + sep + contextFull + sep + cache] : []),
+    modelFull + sep + contextFull,
+    modelLevel + sep + contextFull,
+    modelLevel + sep + contextBar,
+    modelOnly + sep + contextBar,
+    modelOnly + sep + contextCompact,
   ];
-
-  lines.push(...wrapFooterSegments(statusBlocks, width, sep));
-
-  if (latestUsage && latestUsage.windows.length > 0) {
-    lines.push(...renderUsageLine(latestUsage, width, theme));
+  for (const candidate of candidates) {
+    if (visibleWidth(candidate) <= width) return candidate;
   }
 
+  // Keep the context percentage visible by shortening the model name.
+  const tail = sep + contextCompact;
+  const room = width - visibleWidth(tail);
+  if (room >= 4) return truncateToWidth(modelOnly, room) + tail;
+  return truncateToWidth(modelOnly + tail, width);
+}
+
+// ============ Line 2: quota, duration, cwd, git, Context Mode ============
+
+function usageColor(percent: number): ThemeColor {
+  if (percent >= 92) return "error";
+  if (percent >= 85) return "warning";
+  return "muted";
+}
+
+export function renderUsageWindow(window: RateWindow, theme: Theme, includeReset: boolean): string {
+  const percent = Math.floor(window.usedPercent);
+  let text = theme.fg("dim", window.label) + " " + theme.fg(usageColor(percent), `${percent}%`);
+  if (includeReset && window.resetsAt !== undefined && Number.isFinite(window.resetsAt)) {
+    text += " " + theme.fg("dim", `↻ ${formatResetClock(window.resetsAt, window.label)}`);
+  }
+  return text;
+}
+
+export function renderGit(git: GitCache | null, theme: Theme): string {
+  if (!git?.branch) return "";
+  let text = theme.fg(git.dirty ? "warning" : "success", git.branch);
+  if (git.dirty) text += theme.fg("warning", " *");
+  if (git.ahead) text += theme.fg("success", ` ↑${git.ahead}`);
+  if (git.behind) text += theme.fg("error", ` ↓${git.behind}`);
+  return text;
+}
+
+export function renderSecondLine(input: FooterRenderInput): string {
+  const { width, theme } = input;
+  const sep = separator(theme);
+  const windows = input.usage?.windows ?? [];
+  const duration = input.durationMs === undefined ? "" : theme.fg("muted", formatDuration(input.durationMs));
+  const cwd = input.cwd ? theme.fg("dim", input.cwd) : "";
+  const git = renderGit(input.git, theme);
+  const contextMode = input.contextMode ? theme.fg("dim", "ctx-mode") + " " + theme.fg("muted", input.contextMode) : "";
+
+  const build = (options: { windows: number; resets: boolean; duration: boolean; cwd: boolean; contextMode: boolean }) =>
+    [
+      ...windows.slice(0, options.windows).map((window) => renderUsageWindow(window, theme, options.resets)),
+      options.duration ? duration : "",
+      options.cwd ? cwd : "",
+      git,
+      options.contextMode ? contextMode : "",
+    ]
+      .filter(Boolean)
+      .join(sep);
+
+  // Drop detail in priority order: Context Mode, cwd, duration, reset times, then quota windows from the last.
+  const candidates = [
+    build({ windows: windows.length, resets: true, duration: true, cwd: true, contextMode: true }),
+    build({ windows: windows.length, resets: true, duration: true, cwd: true, contextMode: false }),
+    build({ windows: windows.length, resets: true, duration: true, cwd: false, contextMode: false }),
+    build({ windows: windows.length, resets: true, duration: false, cwd: false, contextMode: false }),
+  ];
+  for (let count = windows.length; count >= 0; count--) {
+    candidates.push(build({ windows: count, resets: false, duration: false, cwd: false, contextMode: false }));
+  }
+  return fitVariants(width, candidates);
+}
+
+export function renderFooter(input: FooterRenderInput): string[] {
+  const width = Math.max(1, input.width);
+  const lines = [renderFirstLine({ ...input, width })];
+  const second = renderSecondLine({ ...input, width });
+  if (second) lines.push(second);
   return lines.map((line) => truncateToWidth(line, width));
 }
-

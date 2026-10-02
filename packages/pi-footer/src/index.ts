@@ -5,39 +5,56 @@ import type {
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { getContextInfo, getThinkingLevel } from "./context.ts";
+import { ContextModeTracker } from "./context-mode.ts";
 import { readFooterVisibility } from "./env.ts";
 import { getGitCache, refreshGitCache } from "./git.ts";
-import { renderFooterStatusLine } from "./render.ts";
+import { renderFooter } from "./render.ts";
+import { createCacheUsageReader, getSessionStartTime } from "./session.ts";
 import type { UsageSnapshot } from "./types.ts";
 import {
   cacheUsage,
   detectProvider,
   fetchUsageForProvider,
   getCachedUsage,
+  type ProviderModel,
   USAGE_REFRESH_INTERVAL,
 } from "./usage/index.ts";
 
+// The footer shows minute-level session duration; re-render once a minute.
+const CLOCK_INTERVAL = 60_000;
+
+function shortenHome(path: string): string {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+}
+
 export default function (pi: ExtensionAPI): void {
-  const { showCwd, showBranch, showProvider } = readFooterVisibility();
+  const { showCwd, showBranch, showProvider, showContextMode } = readFooterVisibility();
 
   // Track usage state for rendering
   let latestUsage: UsageSnapshot | null = null;
   let activeProvider: string | null = null; // internal provider key for the current model
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  let clockTimer: ReturnType<typeof setInterval> | null = null;
 
   // Store tui reference for triggering re-renders from event handlers
   let tuiRef: Pick<TUI, "requestRender"> | null = null;
+
+  const contextMode = new ContextModeTracker(undefined, () => tuiRef?.requestRender());
 
   function refreshGitFooter(): void {
     if (refreshGitCache()) tuiRef?.requestRender();
   }
 
+  function refreshContextMode(): void {
+    if (showContextMode) contextMode.refresh();
+  }
+
   /** Fetch usage for the active provider. Shows cached data immediately,
    *  then fetches fresh in the background. Discards results if provider
    *  changed while the fetch was in flight. */
-  function fetchUsage(modelProvider: string): void {
-    const provider = detectProvider(modelProvider);
+  function fetchUsage(model: ProviderModel): void {
+    const provider = detectProvider(model);
     if (!provider) {
       activeProvider = null;
       latestUsage = null;
@@ -103,6 +120,7 @@ export default function (pi: ExtensionAPI): void {
       dispose?(): void;
     } => {
       tuiRef = tui;
+      const readCacheUsage = createCacheUsageReader();
 
       const unsub = footerData.onBranchChange(() => {
         refreshGitFooter();
@@ -111,34 +129,43 @@ export default function (pi: ExtensionAPI): void {
       // Initial fetch inside factory — tui is guaranteed available here,
       // so requestRender() will work when the async fetch completes.
       if (ctx.model?.provider) {
-        fetchUsage(ctx.model.provider);
+        fetchUsage(ctx.model);
         startRefreshTimer();
       }
+
+      contextMode.setSession(ctx.sessionManager.getSessionFile());
+      refreshContextMode();
+
+      if (clockTimer) clearInterval(clockTimer);
+      clockTimer = setInterval(() => tuiRef?.requestRender(), CLOCK_INTERVAL);
 
       return {
         dispose: () => {
           unsub();
           tuiRef = null;
           stopRefreshTimer();
+          if (clockTimer) {
+            clearInterval(clockTimer);
+            clockTimer = null;
+          }
         },
         invalidate() {},
         render(width: number): string[] {
-          const contextInfo = getContextInfo(ctx);
-          const thinkingLevel = ctx.model?.reasoning ? getThinkingLevel(ctx) : "off";
+          const startedAt = getSessionStartTime(ctx.sessionManager);
 
-          return renderFooterStatusLine({
+          return renderFooter({
             width,
-            cwd: ctx.cwd,
-            home: process.env.HOME || process.env.USERPROFILE,
-            gitCache: getGitCache(),
-            showCwd,
-            showBranch,
-            showProvider,
-            model: ctx.model,
-            thinkingLevel,
-            contextInfo,
-            latestUsage,
             theme,
+            model: ctx.model,
+            showProvider,
+            thinkingLevel: ctx.thinkingLevel,
+            context: ctx.getContextUsage(),
+            cache: readCacheUsage(ctx.sessionManager),
+            usage: latestUsage,
+            durationMs: startedAt === undefined ? undefined : Date.now() - startedAt,
+            cwd: showCwd ? shortenHome(ctx.cwd) : undefined,
+            git: showBranch ? getGitCache() : null,
+            contextMode: showContextMode ? contextMode.amount : undefined,
           });
         },
       };
@@ -147,12 +174,13 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("turn_end", async () => {
     refreshGitFooter();
+    refreshContextMode();
   });
 
   // Refresh when model changes — fetch immediately, restart timer
   pi.on("model_select", (event, _ctx: ExtensionContext) => {
     if (!event.model?.provider) return;
-    fetchUsage(event.model.provider);
+    fetchUsage(event.model);
     startRefreshTimer(); // reset the 5min countdown since we just fetched
   });
 }

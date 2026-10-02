@@ -2,9 +2,9 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getApiKey } from "../src/auth.ts";
+import { getApiKey, getCommandCodeToken } from "../src/auth.ts";
 
-const ENV_KEYS = ["HOME", "FOOTER_TEST_API_KEY", "FOOTER_AUTH_REFERENCE"] as const;
+const ENV_KEYS = ["HOME", "FOOTER_TEST_API_KEY", "FOOTER_AUTH_REFERENCE", "COMMAND_CODE_API_KEY"] as const;
 let originalEnv = new Map<string, string | undefined>();
 let home = "";
 let authPath = "";
@@ -22,6 +22,7 @@ beforeEach(async () => {
   process.env.HOME = home;
   delete process.env.FOOTER_TEST_API_KEY;
   delete process.env.FOOTER_AUTH_REFERENCE;
+  delete process.env.COMMAND_CODE_API_KEY;
 });
 
 afterEach(async () => {
@@ -65,5 +66,34 @@ describe("getApiKey", () => {
     await writeAuth({ provider: "!echo test-token" });
 
     expect(getApiKey("provider", "FOOTER_TEST_API_KEY")).toBe("test-token");
+  });
+});
+
+describe("getCommandCodeToken", () => {
+  async function writeCommandCodeAuth(content: string): Promise<void> {
+    await mkdir(join(home, ".commandcode"), { recursive: true });
+    await writeFile(join(home, ".commandcode", "auth.json"), content);
+  }
+
+  it("prefers a trimmed COMMAND_CODE_API_KEY over the CLI auth file", async () => {
+    await writeCommandCodeAuth(JSON.stringify({ apiKey: "file-token" }));
+    process.env.COMMAND_CODE_API_KEY = "  env-token  ";
+    expect(getCommandCodeToken()).toBe("env-token");
+  });
+
+  it("ignores a blank environment variable and reads apiKey from ~/.commandcode/auth.json", async () => {
+    await writeCommandCodeAuth(JSON.stringify({ apiKey: " file-token ", userName: "someone" }));
+    process.env.COMMAND_CODE_API_KEY = "   ";
+    expect(getCommandCodeToken()).toBe("file-token");
+  });
+
+  it("returns undefined for a missing, malformed, or keyless auth file", async () => {
+    expect(getCommandCodeToken()).toBeUndefined();
+    await writeCommandCodeAuth("{not json");
+    expect(getCommandCodeToken()).toBeUndefined();
+    await writeCommandCodeAuth(JSON.stringify({ apiKey: 42 }));
+    expect(getCommandCodeToken()).toBeUndefined();
+    await writeCommandCodeAuth("null");
+    expect(getCommandCodeToken()).toBeUndefined();
   });
 });

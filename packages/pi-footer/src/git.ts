@@ -5,6 +5,8 @@ let gitCache: GitCache | null = null;
 
 export function parseGitStatus(output: string): GitCache {
   let branch: string | null = null;
+  let detached = false;
+  let oid: string | null = null;
   let dirty = false;
   let ahead = 0;
   let behind = 0;
@@ -12,9 +14,16 @@ export function parseGitStatus(output: string): GitCache {
   for (const line of output.split("\n")) {
     if (!line) continue;
 
+    if (line.startsWith("# branch.oid ")) {
+      const value = line.slice("# branch.oid ".length).trim();
+      oid = /^[0-9a-f]+$/i.test(value) ? value : null;
+      continue;
+    }
+
     if (line.startsWith("# branch.head ")) {
       const head = line.slice("# branch.head ".length).trim();
-      branch = head && head !== "(detached)" ? head : null;
+      detached = head === "(detached)";
+      branch = head && !detached ? head : null;
       continue;
     }
 
@@ -29,6 +38,9 @@ export function parseGitStatus(output: string): GitCache {
 
     if (!line.startsWith("# ")) dirty = true;
   }
+
+  // A detached HEAD is shown as its short commit id, like `git rev-parse --short HEAD`.
+  if (detached && oid) branch = oid.slice(0, 7);
 
   return { branch, dirty, ahead, behind };
 }

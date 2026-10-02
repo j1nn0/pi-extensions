@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { detectProvider, fetchUsageForProvider } from "../src/usage/index.ts";
-import { parseAnthropicUsage } from "../src/usage/anthropic.ts";
 import { parseCodexUsage } from "../src/usage/codex.ts";
-import { parseCopilotUsage } from "../src/usage/copilot.ts";
-import { parseGeminiUsage } from "../src/usage/gemini.ts";
-import { parseKimiUsage } from "../src/usage/kimi.ts";
-import { parseMinimaxUsage } from "../src/usage/minimax.ts";
+import { parseCommandCodeUsage } from "../src/usage/commandcode.ts";
 import { parseOpencodeUsage } from "../src/usage/opencode.ts";
 
 const NOW = Date.parse("2026-10-02T12:00:00.000Z");
 const hour = 60 * 60 * 1000;
 const day = 24 * hour;
-const after = (ms: number): string => new Date(NOW + ms).toISOString();
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -20,26 +15,32 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers());
 
-describe("provider detection and dispatch", () => {
-  it("detects every mapped provider id and returns null for unknown ids", () => {
-    const providers = {
-      anthropic: "claude",
-      "openai-codex": "codex",
-      "github-copilot": "copilot",
-      "google-gemini-cli": "gemini",
-      minimax: "minimax",
-      "minimax-cn": "minimax-cn",
-      "kimi-coding": "kimi-coding",
-      "opencode-go": "opencode-go",
-    };
-    for (const [providerId, usageProvider] of Object.entries(providers)) {
-      expect(detectProvider(providerId)).toBe(usageProvider);
-    }
-    expect(detectProvider("not-configured")).toBeNull();
+describe("provider detection", () => {
+  it("maps the built-in Codex and OpenCode Go providers by Pi provider id", () => {
+    expect(detectProvider({ provider: "openai-codex" })).toBe("codex");
+    expect(detectProvider({ provider: "opencode-go" })).toBe("opencode-go");
   });
 
-  it("returns the unknown-provider result for the dispatch default branch", async () => {
-    await expect(fetchUsageForProvider("not-configured")).resolves.toEqual({
+  it("detects Command Code from the configured API host, whatever the provider id", () => {
+    expect(detectProvider({ provider: "command-code", baseUrl: "https://api.commandcode.ai/provider/v1" })).toBe("command-code");
+    expect(detectProvider({ provider: "my-cmd", baseUrl: "https://API.commandcode.ai/provider/v1" })).toBe("command-code");
+  });
+
+  it("never infers a provider from a model id or a look-alike host", () => {
+    expect(detectProvider({ provider: "command-code" })).toBeNull();
+    expect(detectProvider({ provider: "command-code", baseUrl: "https://api.commandcode.ai.example.com/v1" })).toBeNull();
+    expect(detectProvider({ provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1" })).toBeNull();
+    expect(detectProvider({ provider: "custom", baseUrl: "not a url" })).toBeNull();
+  });
+
+  it("no longer supports the removed providers", () => {
+    for (const provider of ["anthropic", "github-copilot", "google-gemini-cli", "minimax", "minimax-cn", "kimi-coding"]) {
+      expect(detectProvider({ provider })).toBeNull();
+    }
+  });
+
+  it("returns an unknown-provider snapshot for unmapped keys", async () => {
+    await expect(fetchUsageForProvider("claude")).resolves.toEqual({
       provider: "Unknown",
       windows: [],
       error: "unknown-provider",
@@ -48,178 +49,111 @@ describe("provider detection and dispatch", () => {
   });
 });
 
-describe("Anthropic parser", () => {
-  it("parses available windows and tolerates missing windows", () => {
+describe("Codex", () => {
+  it("labels windows from limit_window_seconds and keeps reset timestamps", () => {
     expect(
-      parseAnthropicUsage({
-        five_hour: { utilization: 0.375, resets_at: after(2 * hour + 38 * 60_000) },
-        seven_day: { utilization: 83.4, resets_at: after(6 * day + 3 * hour) },
-      })
-    ).toEqual({
-      provider: "Claude",
-      windows: [
-        { label: "5h", usedPercent: 37.5, resetsIn: "2h38m" },
-        { label: "Week", usedPercent: 83.4, resetsIn: "6d3h" },
-      ],
-      fetchedAt: NOW,
-    });
+      parseCodexUsage({
+        rate_limit: {
+          primary_window: { used_percent: 71.5, reset_at: (NOW + 3 * hour) / 1000, limit_window_seconds: 5 * 3600 },
+          secondary_window: { used_percent: 14, reset_at: (NOW + 4 * day) / 1000, limit_window_seconds: 7 * 24 * 3600 },
+        },
+      }).windows
+    ).toEqual([
+      { label: "5h", usedPercent: 71.5, resetsAt: NOW + 3 * hour },
+      { label: "7d", usedPercent: 14, resetsAt: NOW + 4 * day },
+    ]);
+  });
 
-    expect(parseAnthropicUsage({})).toEqual({ provider: "Claude", windows: [], fetchedAt: NOW });
+  it("uses the reported length instead of assuming 5h", () => {
+    expect(parseCodexUsage({ rate_limit: { primary_window: { used_percent: 1, limit_window_seconds: 8 * 3600 } } }).windows).toEqual([
+      { label: "8h", usedPercent: 1, resetsAt: undefined },
+    ]);
+  });
+
+  it("falls back to the documented 5h/7d labels and handles missing fields", () => {
+    expect(parseCodexUsage({ rate_limit: { primary_window: {}, secondary_window: { used_percent: 140 } } }).windows).toEqual([
+      { label: "5h", usedPercent: 0, resetsAt: undefined },
+      { label: "7d", usedPercent: 100, resetsAt: undefined },
+    ]);
+    expect(parseCodexUsage({}).windows).toEqual([]);
   });
 });
 
-describe("Copilot parser", () => {
-  it("omits unlimited chat while parsing premium quota", () => {
+describe("OpenCode Go", () => {
+  it("parses rolling, weekly, and monthly windows with reset timestamps", () => {
     expect(
-      parseCopilotUsage({
-        quota_reset_date_utc: after(65 * 60_000),
-        quota_snapshots: {
-          premium_interactions: { percent_remaining: 5.4 },
-          chat: { percent_remaining: 75, unlimited: true },
-        },
-      })
-    ).toEqual({
-      provider: "Copilot",
-      windows: [{ label: "Premium", usedPercent: 94.6, resetsIn: "1h5m" }],
-      fetchedAt: NOW,
-    });
+      parseOpencodeUsage({
+        rollingUsage: { usagePercent: 56.4, resetInSec: 9480 },
+        weeklyUsage: { usagePercent: 87.5, resetInSec: 5 * 24 * 3600 },
+        monthlyUsage: { usagePercent: 9, resetInSec: 30 * 24 * 3600 },
+      }).windows
+    ).toEqual([
+      { label: "5h", usedPercent: 56.4, resetsAt: NOW + 9480 * 1000 },
+      { label: "7d", usedPercent: 87.5, resetsAt: NOW + 5 * day },
+      { label: "mo", usedPercent: 9, resetsAt: NOW + 30 * day },
+    ]);
   });
 
-  it("uses the existing 100-percent-used result when percent_remaining is missing", () => {
-    expect(parseCopilotUsage({ quota_snapshots: { premium_interactions: {}, chat: {} } }).windows).toEqual([
-      { label: "Premium", usedPercent: 100, resetsIn: undefined },
-      { label: "Chat", usedPercent: 100, resetsIn: undefined },
+  it("omits resets it does not report", () => {
+    expect(parseOpencodeUsage({ rollingUsage: { usagePercent: 4 }, monthlyUsage: {} }).windows).toEqual([
+      { label: "5h", usedPercent: 4, resetsAt: undefined },
+      { label: "mo", usedPercent: 0, resetsAt: undefined },
     ]);
   });
 });
 
-describe("Codex parser", () => {
-  it("labels windows from their durations and leaves missing reset times absent", () => {
-    expect(
-      parseCodexUsage({
-        rate_limit: {
-          primary_window: { used_percent: 71.5, limit_window_seconds: 24 * 60 * 60 },
-          secondary_window: { used_percent: 14, limit_window_seconds: 7 * 24 * 60 * 60 },
-        },
-      })
-    ).toEqual({
-      provider: "Codex",
-      windows: [
-        { label: "Day", usedPercent: 71.5, resetsIn: undefined },
-        { label: "Week", usedPercent: 14, resetsIn: undefined },
-      ],
-      fetchedAt: NOW,
-    });
-  });
-});
+describe("Command Code", () => {
+  const body = {
+    credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 },
+    windowLimits: {
+      limited: true,
+      exceeded: null,
+      fiveHour: { used: 3.15, cap: 14, exceeded: false, resetAt: NOW + 3 * hour },
+      weekly: { used: 23.1, cap: 35, exceeded: false, resetAt: NOW + 6 * day },
+    },
+  };
 
-describe("Gemini parser", () => {
-  it("takes the minimum remaining quota for pro and flash model families", () => {
-    expect(
-      parseGeminiUsage({
-        buckets: [
-          { modelId: "gemini-pro", remainingFraction: 0.7 },
-          { modelId: "gemini-pro-preview", remainingFraction: 0.2 },
-          { modelId: "gemini-flash", remainingFraction: 0.125 },
-          { modelId: "other-model", remainingFraction: 0.01 },
-        ],
-      })
-    ).toEqual({
-      provider: "Gemini",
-      windows: [
-        { label: "Pro", usedPercent: 80 },
-        { label: "Flash", usedPercent: 87.5 },
-      ],
-      fetchedAt: NOW,
-    });
+  it("parses the 5-hour and weekly window limits as used / cap", () => {
+    const usage = parseCommandCodeUsage(body);
+    expect(usage.provider).toBe("Command Code");
+    expect(usage.error).toBeUndefined();
+    expect(usage.windows).toHaveLength(2);
+    expect(usage.windows[0]).toEqual({ label: "5h", usedPercent: (3.15 / 14) * 100, resetsAt: NOW + 3 * hour });
+    expect(usage.windows[1]).toEqual({ label: "7d", usedPercent: (23.1 / 35) * 100, resetsAt: NOW + 6 * day });
   });
 
-  it("returns no windows when there are no quota buckets", () => {
-    expect(parseGeminiUsage({ buckets: [] })).toEqual({ provider: "Gemini", windows: [], fetchedAt: NOW });
-  });
-});
-
-describe("MiniMax parser", () => {
-  it("prefers an active general bucket over other active or inactive buckets", () => {
-    expect(
-      parseMinimaxUsage(
-        {
-          model_remains: [
-            { model_name: "video", current_interval_status: 1, current_interval_remaining_percent: 5 },
-            { model_name: "general", current_interval_status: 3, current_interval_remaining_percent: 90 },
-            { model_name: "general", current_interval_status: 1, current_interval_remaining_percent: 80 },
-          ],
-        },
-        "minimax"
-      )
-    ).toEqual({ provider: "MiniMax", windows: [{ label: "5h", usedPercent: 20, resetsIn: undefined }], fetchedAt: NOW });
+  it("caps at 100% and uses 0% without a cap, like the CLI", () => {
+    const windows = parseCommandCodeUsage({
+      windowLimits: { fiveHour: { used: 20, cap: 14, resetAt: NOW }, weekly: { used: 5, cap: 0 } },
+    }).windows;
+    expect(windows.map((window) => window.usedPercent)).toEqual([100, 0]);
+    expect(windows[1]?.resetsAt).toBeUndefined();
   });
 
-  it("returns provider API errors, no-bucket errors, and no-usage-data for non-finite remaining values", () => {
-    expect(parseMinimaxUsage({ base_resp: { status_code: 7, status_msg: "plan unavailable" } }, "minimax-cn")).toEqual({
-      provider: "MiniMax CN",
+  it("returns one window when only one is reported", () => {
+    expect(parseCommandCodeUsage({ windowLimits: { weekly: { used: 1, cap: 4, resetAt: NOW + day } } }).windows).toEqual([
+      { label: "7d", usedPercent: 25, resetsAt: NOW + day },
+    ]);
+  });
+
+  it.each([
+    ["missing body", undefined],
+    ["null body", null],
+    ["no window limits", { credits: { monthlyCredits: 5 } }],
+    ["null window limits", { windowLimits: null }],
+    ["non-numeric values", { windowLimits: { fiveHour: { used: "a lot", cap: "x" }, weekly: null } }],
+  ])("reports no-usage-data for %s", (_name, value) => {
+    expect(parseCommandCodeUsage(value)).toEqual({
+      provider: "Command Code",
       windows: [],
-      error: "plan unavailable",
-      fetchedAt: NOW,
-    });
-    expect(parseMinimaxUsage({ base_resp: { status_code: 9 } }, "minimax").error).toBe("API 9");
-    expect(parseMinimaxUsage({ model_remains: [] }, "minimax").error).toBe("no-usage-data");
-    expect(
-      parseMinimaxUsage(
-        {
-          model_remains: [
-            {
-              model_name: "general",
-              current_interval_status: 1,
-              current_interval_remaining_percent: "not-a-number",
-              current_weekly_remaining_percent: "not-a-number",
-            },
-          ],
-        },
-        "minimax"
-      )
-    ).toEqual({ provider: "MiniMax", windows: [], error: "no-usage-data", fetchedAt: NOW });
-  });
-});
-
-describe("Kimi parser", () => {
-  it("skips zero-limit windows, handles minute durations, and parses weekly usage", () => {
-    expect(
-      parseKimiUsage({
-        limits: [
-          { detail: { limit: 0, remaining: 0 } },
-          {
-            detail: { limit: 100, remaining: 75, resetTime: after(65 * 60_000) },
-            window: { duration: 120, timeUnit: "TIME_UNIT_MINUTE" },
-          },
-        ],
-        usage: { limit: 200, remaining: 50, resetTime: after(6 * day) },
-      })
-    ).toEqual({
-      provider: "Kimi Coding",
-      windows: [
-        { label: "5h", usedPercent: 25, resetsIn: "1h5m" },
-        { label: "Weekly", usedPercent: 75, resetsIn: "6d" },
-      ],
+      error: "no-usage-data",
       fetchedAt: NOW,
     });
   });
-});
 
-describe("OpenCode parser", () => {
-  it("leaves missing resetInSec unset while parsing present windows", () => {
+  it("ignores invalid reset timestamps", () => {
     expect(
-      parseOpencodeUsage({
-        rollingUsage: { usagePercent: 56.4 },
-        weeklyUsage: { usagePercent: 87.5, resetInSec: hour / 1000 },
-      })
-    ).toEqual({
-      provider: "OpenCode Go",
-      windows: [
-        { label: "5h", usedPercent: 56.4, resetsIn: undefined },
-        { label: "Week", usedPercent: 87.5, resetsIn: "1h" },
-      ],
-      fetchedAt: NOW,
-    });
+      parseCommandCodeUsage({ windowLimits: { fiveHour: { used: 1, cap: 2, resetAt: "soon" } } }).windows[0]?.resetsAt
+    ).toBeUndefined();
   });
 });

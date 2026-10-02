@@ -18,14 +18,8 @@ interface CodexAuthFile {
   };
 }
 
-interface GeminiAuthFile {
-  access_token?: string;
-}
-
-interface ClaudeKeychainFile {
-  claudeAiOauth?: {
-    accessToken?: string;
-  };
+interface CommandCodeAuthFile {
+  apiKey?: unknown;
 }
 
 export function loadAuthJson(): Record<string, unknown> {
@@ -78,33 +72,6 @@ export function getApiKey(providerKey: string, envVar: string): string | undefin
   return resolveAuthValue(credential.key ?? credential.access ?? credential.refresh);
 }
 
-export function getClaudeToken(): string | undefined {
-  const auth = loadAuthJson();
-  const anthropic = auth.anthropic as AuthCredential | undefined;
-  if (anthropic?.access) return anthropic.access as string;
-
-  // Fallback: Claude CLI keychain (macOS)
-  try {
-    const keychainData = execSync(
-      'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
-    ).trim();
-    if (keychainData) {
-      const parsed = JSON.parse(keychainData) as ClaudeKeychainFile;
-      if (parsed.claudeAiOauth?.accessToken) {
-        return parsed.claudeAiOauth.accessToken;
-      }
-    }
-  } catch {}
-
-  return undefined;
-}
-
-export function getCopilotToken(): string | undefined {
-  const auth = loadAuthJson();
-  return (auth["github-copilot"] as AuthCredential | undefined)?.refresh as string | undefined;
-}
-
 export function getCodexToken(): { token: string; accountId?: string } | undefined {
   const auth = loadAuthJson();
   const codexAuth = auth["openai-codex"] as AuthCredential | undefined;
@@ -132,33 +99,26 @@ export function getCodexToken(): { token: string; accountId?: string } | undefin
   return undefined;
 }
 
-export function getGeminiToken(): string | undefined {
-  const auth = loadAuthJson();
-  const geminiAuth = auth["google-gemini-cli"] as AuthCredential | undefined;
-  if (geminiAuth?.access) return geminiAuth.access as string;
+export function getOpencodeToken(): string | undefined {
+  return getApiKey("opencode-go", "OPENCODE_API_KEY");
+}
 
-  // Fallback: ~/.gemini/oauth_creds.json
-  const geminiPath = join(homedir(), ".gemini", "oauth_creds.json");
+/**
+ * Resolve the Command Code API key the same way the `cmd` CLI does:
+ * COMMAND_CODE_API_KEY first, then `apiKey` in ~/.commandcode/auth.json.
+ */
+export function getCommandCodeToken(): string | undefined {
+  const fromEnv = process.env.COMMAND_CODE_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+
+  const authPath = join(homedir(), ".commandcode", "auth.json");
   try {
-    if (existsSync(geminiPath)) {
-      const data = JSON.parse(readFileSync(geminiPath, "utf-8")) as GeminiAuthFile;
-      return data.access_token;
+    if (existsSync(authPath)) {
+      const data = JSON.parse(readFileSync(authPath, "utf-8")) as CommandCodeAuthFile | null;
+      const apiKey = typeof data?.apiKey === "string" ? data.apiKey.trim() : "";
+      if (apiKey) return apiKey;
     }
   } catch {}
 
   return undefined;
-}
-
-export function getMinimaxToken(provider: "minimax" | "minimax-cn"): string | undefined {
-  return provider === "minimax"
-    ? getApiKey("minimax", "MINIMAX_API_KEY")
-    : getApiKey("minimax-cn", "MINIMAX_CN_API_KEY");
-}
-
-export function getKimiToken(): string | undefined {
-  return getApiKey("kimi-coding", "KIMI_API_KEY");
-}
-
-export function getOpencodeToken(): string | undefined {
-  return getApiKey("opencode-go", "OPENCODE_API_KEY");
 }

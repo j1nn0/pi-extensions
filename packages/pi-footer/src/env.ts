@@ -2,6 +2,7 @@ export interface FooterVisibility {
   showCwd: boolean;
   showBranch: boolean;
   showProvider: boolean;
+  showContextMode: boolean;
 }
 
 export function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
@@ -15,10 +16,19 @@ export function parseBooleanEnv(value: string | undefined, fallback: boolean): b
   return fallback;
 }
 
-export function readFooterVisibility(): FooterVisibility {
+/**
+ * Read `PI_FOOTER_<name>`, falling back to the legacy `PI_MINIMAL_FOOTER_<name>`
+ * and then to the default when a variable is unset, empty, or unrecognized.
+ */
+export function readFlag(name: string, fallback: boolean, env: NodeJS.ProcessEnv = process.env): boolean {
+  return parseBooleanEnv(env[`PI_FOOTER_${name}`], parseBooleanEnv(env[`PI_MINIMAL_FOOTER_${name}`], fallback));
+}
+
+export function readFooterVisibility(env: NodeJS.ProcessEnv = process.env): FooterVisibility {
   return {
-    showCwd: parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_CWD, true),
-    showBranch: parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_BRANCH, true),
-    showProvider: parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_PROVIDER, false),
+    showCwd: readFlag("SHOW_CWD", false, env),
+    showBranch: readFlag("SHOW_BRANCH", true, env),
+    showProvider: readFlag("SHOW_PROVIDER", false, env),
+    showContextMode: readFlag("SHOW_CONTEXT_MODE", true, env),
   };
 }

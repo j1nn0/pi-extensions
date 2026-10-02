@@ -1,30 +1,45 @@
-import { fetchAnthropicUsage } from "./anthropic.ts";
 import { fetchCodexUsage } from "./codex.ts";
-import { fetchCopilotUsage } from "./copilot.ts";
-import { fetchGeminiUsage } from "./gemini.ts";
-import { fetchKimiUsage } from "./kimi.ts";
-import { fetchMinimaxUsage } from "./minimax.ts";
+import { fetchCommandCodeUsage } from "./commandcode.ts";
 import { fetchOpencodeUsage } from "./opencode.ts";
 import type { UsageSnapshot } from "../types.ts";
 
 export const USAGE_REFRESH_INTERVAL = 5 * 60_000;
 
+export type UsageProvider = "codex" | "opencode-go" | "command-code";
+
+export interface ProviderModel {
+  provider: string;
+  baseUrl?: string;
+}
+
 const usageCache = new Map<string, UsageSnapshot>();
 
-// Map pi provider names to our internal usage provider keys.
-const PROVIDER_MAP: Record<string, string> = {
-  anthropic: "claude", // Claude Max subscription
-  "openai-codex": "codex", // Codex subscription
-  "github-copilot": "copilot", // Copilot subscription
-  "google-gemini-cli": "gemini", // Gemini CLI subscription
-  minimax: "minimax", // MiniMax Token Plan / Coding Plan
-  "minimax-cn": "minimax-cn", // MiniMax China plan
-  "kimi-coding": "kimi-coding", // Kimi plan
-  "opencode-go": "opencode-go", // OpenCode Go plan
+// Map Pi provider ids to internal usage provider keys.
+const PROVIDER_MAP: Record<string, UsageProvider> = {
+  "openai-codex": "codex", // Built-in Codex subscription provider
+  "opencode-go": "opencode-go", // Built-in OpenCode Go provider
 };
 
-export function detectProvider(modelProvider: string): string | null {
-  return PROVIDER_MAP[modelProvider] || null;
+const COMMAND_CODE_API_HOST = "api.commandcode.ai";
+
+function hostOf(baseUrl: string | undefined): string | undefined {
+  if (!baseUrl) return undefined;
+  try {
+    return new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Detect the usage provider from Pi's provider configuration. Model ids are never used:
+ * the same model can be served by several providers.
+ */
+export function detectProvider(model: ProviderModel): UsageProvider | null {
+  // Command Code is configured as a custom provider in models.json, so its id is
+  // user-chosen; the configured API host is the reliable signal.
+  if (hostOf(model.baseUrl) === COMMAND_CODE_API_HOST) return "command-code";
+  return PROVIDER_MAP[model.provider] ?? null;
 }
 
 export function getCachedUsage(provider: string): UsageSnapshot | undefined {
@@ -37,22 +52,12 @@ export function cacheUsage(provider: string, usage: UsageSnapshot): void {
 
 export async function fetchUsageForProvider(provider: string): Promise<UsageSnapshot> {
   switch (provider) {
-    case "claude":
-      return fetchAnthropicUsage();
     case "codex":
       return fetchCodexUsage();
-    case "copilot":
-      return fetchCopilotUsage();
-    case "gemini":
-      return fetchGeminiUsage();
-    case "minimax":
-      return fetchMinimaxUsage("minimax");
-    case "minimax-cn":
-      return fetchMinimaxUsage("minimax-cn");
-    case "kimi-coding":
-      return fetchKimiUsage();
     case "opencode-go":
       return fetchOpencodeUsage();
+    case "command-code":
+      return fetchCommandCodeUsage();
     default:
       return { provider: "Unknown", windows: [], error: "unknown-provider", fetchedAt: Date.now() };
   }

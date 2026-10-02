@@ -1,7 +1,8 @@
 export interface RateWindow {
   label: string;
   usedPercent: number;
-  resetsIn?: string;
+  /** Epoch milliseconds when the window resets, when the provider reports it. */
+  resetsAt?: number;
 }
 
 export interface UsageSnapshot {
@@ -18,8 +19,7 @@ export interface GitCache {
   behind: number;
 }
 
-export interface ContextInfo {
-  percentage: number;
-  used: number;
-  total: number;
+export interface CacheUsage {
+  read: number;
+  write: number;
 }

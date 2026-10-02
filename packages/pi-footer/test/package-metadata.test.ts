@@ -26,7 +26,6 @@ describe("standalone package metadata", () => {
     expect(packageJson.files).toEqual(expect.arrayContaining([
       "index.ts",
       "src/",
-      "assets/*.png",
       "README.md",
       "LICENSE",
     ]));
@@ -36,9 +35,7 @@ describe("standalone package metadata", () => {
     expect(packageJson.devDependencies["@earendil-works/pi-ai"]).toBe("1.0.0");
     expect(packageJson.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.0.0");
     expect(packageJson.devDependencies["@earendil-works/pi-tui"]).toBe("1.0.0");
-    for (const asset of ["claude.png", "codex.png"]) {
-      expect(existsSync(join(rootPath, "assets", asset))).toBe(true);
-    }
+    expect(existsSync(join(rootPath, "assets"))).toBe(false);
 
     const license = await readFile(join(rootPath, "LICENSE"), "utf8");
     expect(license).toContain("Copyright (c) 2025 Can Celik\nCopyright (c) 2026 j1nn0");

@@ -1,32 +1,13 @@
-export function formatResetTime(date: Date): string {
-  const diffMs = date.getTime() - Date.now();
-  if (diffMs < 0) return "now";
-
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-  if (hours < 24) return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
-
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-  return remainingHours > 0 ? `${days}d${remainingHours}h` : `${days}d`;
-}
-
 /** Clamp a percentage to [0, 100]. Does NOT auto-normalize 0-1 fractions. */
 export function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
 }
 
-/** Normalize a value that might be 0-1 fraction OR 0-100 percent, then clamp. */
-export function normalizePercent(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  const normalized = value <= 1 && value >= 0 ? value * 100 : value;
-  return Math.max(0, Math.min(100, normalized));
-}
-
+/**
+ * Label a quota window from its actual length, e.g. "5h", "8h", "1d", "7d".
+ * The fallback is used only when the provider does not report a length.
+ */
 export function getWindowLabel(durationMs: number | undefined, fallback: string): string {
   if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return fallback;
 
@@ -34,16 +15,9 @@ export function getWindowLabel(durationMs: number | undefined, fallback: string)
   const dayMs = 24 * hourMs;
   const weekMs = 7 * dayMs;
 
-  // Check if duration is close to a standard window and use the fallback label.
-  // This preserves "5h" / "Week" / "Day" labels even when the actual
-  // rolling window start/end times don't align perfectly.
-  const isCloseToWeek = Math.abs(durationMs - weekMs) <= hourMs * 2;
-  const isCloseToDay = Math.abs(durationMs - dayMs) <= hourMs * 2;
-  const isCloseTo5h = Math.abs(durationMs - 5 * hourMs) <= hourMs * 2;
-
-  if (isCloseToWeek || fallback === "Week") return "Week";
-  if (isCloseToDay || fallback === "Day") return "Day";
-  if (isCloseTo5h || fallback === "5h") return fallback;
+  // Rolling windows rarely align exactly; snap to a week or a day within two hours.
+  if (Math.abs(durationMs - weekMs) <= hourMs * 2) return "7d";
+  if (Math.abs(durationMs - dayMs) <= hourMs * 2) return "1d";
 
   const hours = Math.round(durationMs / hourMs);
   if (hours >= 1 && hours < 48) return `${hours}h`;
@@ -55,13 +29,32 @@ export function getWindowLabel(durationMs: number | undefined, fallback: string)
   return `${mins}m`;
 }
 
+/** Token counts with one decimal: 950, 424.5k, 1.0M. */
 export function formatTokenCount(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    const m = tokens / 1_000_000;
-    return m % 1 === 0 ? `${m}M` : `${m.toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (tokens >= 1_000) {
-    return `${Math.round(tokens / 1_000)}k`;
-  }
-  return `${tokens}`;
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
+  return `${Math.trunc(tokens)}`;
+}
+
+/** Elapsed wall-clock time: 42m, 2h03m, 28h04m. */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return hours > 0 ? `${hours}h${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * Local reset time: "HH:MM" for windows measured in hours or minutes,
+ * "MM/DD HH:MM" for longer or unnamed windows.
+ */
+export function formatResetClock(resetsAt: number, label: string): string {
+  const date = new Date(resetsAt);
+  const clock = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  if (/^\d+[hm]$/.test(label)) return clock;
+  return `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${clock}`;
 }

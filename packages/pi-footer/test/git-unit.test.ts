@@ -28,7 +28,16 @@ describe("parseGitStatus", () => {
     ).toEqual({ branch: "feature/footer", dirty: true, ahead: 0, behind: 0 });
   });
 
-  it("represents detached head and missing upstream with null/zero defaults", () => {
+  it("shows a detached head as its short commit id", () => {
+    expect(parseGitStatus("# branch.oid 0123456789abcdef0123\n# branch.head (detached)\n? new.txt")).toEqual({
+      branch: "0123456",
+      dirty: true,
+      ahead: 0,
+      behind: 0,
+    });
+  });
+
+  it("represents an unborn detached head and missing upstream with null/zero defaults", () => {
     expect(parseGitStatus("# branch.oid (initial)\n# branch.head (detached)")).toEqual({
       branch: null,
       dirty: false,
