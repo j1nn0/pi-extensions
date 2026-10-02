@@ -130,10 +130,13 @@ other segment.
 
 - Quota is fetched when the footer is created at session start, immediately
   when the model changes, and every 5 minutes for the active provider. Requests
-  time out after 5 seconds.
-- Results are cached per provider for the lifetime of the Pi process. Cached
-  values are shown immediately after a model switch while a fresh request runs,
-  and stay visible when a refresh fails.
+  time out after 5 seconds. Models from other providers make no quota requests
+  and run no refresh timer.
+- Results are cached per provider for the lifetime of the Pi process. After a
+  model switch, the new provider's cached values are shown immediately while a
+  fresh request runs; without a cache, no quota is shown until the first
+  response arrives. Another provider's quota is never shown.
+- When a refresh fails, the provider's previous values stay visible.
 - Git state is read with `git status --porcelain=v2 --branch` (1 second
   timeout) in the directory Pi was started from, at session start, when Pi
   reports a branch change, and at the end of every turn.
@@ -166,7 +169,7 @@ from the original package is used when the new one is unset, empty, or invalid.
 | `PI_FOOTER_SHOW_CWD`           | `PI_MINIMAL_FOOTER_SHOW_CWD`      | Show the working directory on line 2              | `0`     |
 | `PI_FOOTER_SHOW_BRANCH`        | `PI_MINIMAL_FOOTER_SHOW_BRANCH`   | Show Git branch, dirty marker, and ahead/behind   | `1`     |
 | `PI_FOOTER_SHOW_PROVIDER`      | `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show `provider/model-id` instead of the short ID  | `0`     |
-| `PI_FOOTER_SHOW_CONTEXT_MODE`  | `PI_MINIMAL_FOOTER_SHOW_CONTEXT_MODE` | Query Context Mode and show `ctx-mode`        | `1`     |
+| `PI_FOOTER_SHOW_CONTEXT_MODE`  | —                                 | Query Context Mode and show `ctx-mode`            | `1`     |
 
 True values: `1`, `true`, `yes`, `on`. False values: `0`, `false`, `no`, `off`.
 Values are case-insensitive and trimmed.
