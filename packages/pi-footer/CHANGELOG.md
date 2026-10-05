@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Remove misleading Claude Code StatusLine references from the package description, README, and changelog. Documentation and metadata only; no functional change.
+- Clarify package description and documentation to describe the footer independently of external UI designs.
 
 ## [0.1.1] - 2026-10-05
 
