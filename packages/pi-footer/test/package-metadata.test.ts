@@ -19,7 +19,7 @@ describe("standalone package metadata", () => {
       devDependencies: Record<string, string>;
     };
     expect(packageJson.name).toBe("@j1nn0/pi-footer");
-    expect(packageJson.version).toBe("0.1.0");
+    expect(packageJson.version).toBe("0.1.1");
     expect(packageJson.engines.node).toBe(">=22.19.0");
     expect(packageJson.pi.extensions).toEqual(["./index.ts"]);
     expect(existsSync(join(rootPath, "index.ts"))).toBe(true);

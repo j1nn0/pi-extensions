@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-05
+
 ### Fixed
 
 - Fix OpenCode Go quota parsing for the current `/zen/go/v1/usage` response format.
