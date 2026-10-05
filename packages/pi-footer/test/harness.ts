@@ -50,9 +50,11 @@ export function defaultFixtures(): Map<string, ResponseFixture> {
       {
         status: 200,
         body: {
-          rollingUsage: { usagePercent: 56.4, resetInSec: 2 * 3600 + 38 * 60 },
-          weeklyUsage: { usagePercent: 87.5, resetInSec: 5 * 24 * 3600 },
-          monthlyUsage: { usagePercent: 9, resetInSec: 30 * 24 * 3600 },
+          usage: {
+            rolling: { status: "ok", percent: 56.4, resetsAt: new Date(FROZEN_NOW + 2 * HOUR + 38 * 60 * 1000).toISOString() },
+            weekly: { status: "ok", percent: 87.5, resetsAt: new Date(FROZEN_NOW + 5 * DAY).toISOString() },
+            monthly: { status: "ok", percent: 9, resetsAt: new Date(FROZEN_NOW + 30 * DAY).toISOString() },
+          },
         },
       },
     ],

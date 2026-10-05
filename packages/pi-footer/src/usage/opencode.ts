@@ -4,32 +4,47 @@ import { fetchWithTimeout } from "./fetch.ts";
 import type { RateWindow, UsageSnapshot } from "../types.ts";
 
 interface OpenCodeUsageWindow {
-  usagePercent?: number;
-  resetInSec?: number;
+  percent?: unknown;
+  resetsAt?: unknown;
 }
 
 interface OpenCodeUsageResponse {
-  rollingUsage?: OpenCodeUsageWindow;
-  weeklyUsage?: OpenCodeUsageWindow;
-  monthlyUsage?: OpenCodeUsageWindow;
+  usage?: {
+    rolling?: OpenCodeUsageWindow | null;
+    weekly?: OpenCodeUsageWindow | null;
+    monthly?: OpenCodeUsageWindow | null;
+  } | null;
 }
 
-function parseOpencodeWindow(window: OpenCodeUsageWindow, label: string): RateWindow {
+function parseOpencodeWindow(window: unknown, label: string): RateWindow | undefined {
+  if (!window || typeof window !== "object") return undefined;
+
+  const data = window as OpenCodeUsageWindow;
+  if (typeof data.percent !== "number" || !Number.isFinite(data.percent)) return undefined;
+
+  const parsedReset = typeof data.resetsAt === "string" ? Date.parse(data.resetsAt) : Number.NaN;
   return {
     label,
-    usedPercent: clampPercent(window.usagePercent ?? 0),
-    resetsAt: Number.isFinite(window.resetInSec) ? Date.now() + (window.resetInSec as number) * 1000 : undefined,
+    usedPercent: clampPercent(data.percent),
+    resetsAt: Number.isFinite(parsedReset) ? parsedReset : undefined,
   };
 }
 
 export function parseOpencodeUsage(body: unknown): UsageSnapshot {
-  const data = body as OpenCodeUsageResponse;
+  const data = body !== null && typeof body === "object" ? (body as OpenCodeUsageResponse) : undefined;
+  const usage = data?.usage !== null && typeof data?.usage === "object" ? data.usage : undefined;
   const windows: RateWindow[] = [];
 
-  if (data.rollingUsage) windows.push(parseOpencodeWindow(data.rollingUsage, "5h"));
-  if (data.weeklyUsage) windows.push(parseOpencodeWindow(data.weeklyUsage, "7d"));
-  if (data.monthlyUsage) windows.push(parseOpencodeWindow(data.monthlyUsage, "mo"));
+  const rolling = parseOpencodeWindow(usage?.rolling, "5h");
+  if (rolling) windows.push(rolling);
+  const weekly = parseOpencodeWindow(usage?.weekly, "7d");
+  if (weekly) windows.push(weekly);
+  const monthly = parseOpencodeWindow(usage?.monthly, "mo");
+  if (monthly) windows.push(monthly);
 
+  if (windows.length === 0) {
+    return { provider: "OpenCode Go", windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+  }
   return { provider: "OpenCode Go", windows, fetchedAt: Date.now() };
 }
 

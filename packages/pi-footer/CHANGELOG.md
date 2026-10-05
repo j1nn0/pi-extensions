@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix OpenCode Go quota parsing for the current `/zen/go/v1/usage` response format.
+
 ## [0.1.0] - 2026-10-02
 
 First standalone release of `@j1nn0/pi-footer`, a fork of Can Celik's `pi-minimal-footer` from the `ogulcancelik/pi-extensions` monorepo.

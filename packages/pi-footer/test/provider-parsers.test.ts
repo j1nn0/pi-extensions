@@ -80,25 +80,93 @@ describe("Codex", () => {
 });
 
 describe("OpenCode Go", () => {
-  it("parses rolling, weekly, and monthly windows with reset timestamps", () => {
+  it("parses the current rolling, weekly, and monthly response with reset timestamps", () => {
     expect(
       parseOpencodeUsage({
-        rollingUsage: { usagePercent: 56.4, resetInSec: 9480 },
-        weeklyUsage: { usagePercent: 87.5, resetInSec: 5 * 24 * 3600 },
-        monthlyUsage: { usagePercent: 9, resetInSec: 30 * 24 * 3600 },
+        usage: {
+          rolling: { status: "ok", percent: 12.8, resetsAt: "2026-10-05T04:20:00.000Z" },
+          weekly: { status: "ok", percent: 45.6, resetsAt: "2026-10-09T03:00:00.000Z" },
+          monthly: { status: "ok", percent: 7.8, resetsAt: "2026-11-01T03:00:00.000Z" },
+        },
       }).windows
     ).toEqual([
-      { label: "5h", usedPercent: 56.4, resetsAt: NOW + 9480 * 1000 },
-      { label: "7d", usedPercent: 87.5, resetsAt: NOW + 5 * day },
-      { label: "mo", usedPercent: 9, resetsAt: NOW + 30 * day },
+      { label: "5h", usedPercent: 12.8, resetsAt: Date.parse("2026-10-05T04:20:00.000Z") },
+      { label: "7d", usedPercent: 45.6, resetsAt: Date.parse("2026-10-09T03:00:00.000Z") },
+      { label: "mo", usedPercent: 7.8, resetsAt: Date.parse("2026-11-01T03:00:00.000Z") },
     ]);
   });
 
-  it("omits resets it does not report", () => {
-    expect(parseOpencodeUsage({ rollingUsage: { usagePercent: 4 }, monthlyUsage: {} }).windows).toEqual([
+  it("omits missing windows without synthesizing them", () => {
+    expect(parseOpencodeUsage({ usage: { rolling: { percent: 4 } } }).windows).toEqual([
       { label: "5h", usedPercent: 4, resetsAt: undefined },
-      { label: "mo", usedPercent: 0, resetsAt: undefined },
     ]);
+    expect(parseOpencodeUsage({ usage: { weekly: { percent: 25 }, monthly: { percent: 75 } } }).windows).toEqual([
+      { label: "7d", usedPercent: 25, resetsAt: undefined },
+      { label: "mo", usedPercent: 75, resetsAt: undefined },
+    ]);
+
+    expect(parseOpencodeUsage({ usage: { rolling: null, weekly: { percent: 25 }, monthly: null } }).windows).toEqual([
+      { label: "7d", usedPercent: 25, resetsAt: undefined },
+    ]);
+  });
+
+  it("keeps valid percentages when reset timestamps are missing or invalid", () => {
+    expect(
+      parseOpencodeUsage({
+        usage: {
+          rolling: { percent: 10 },
+          weekly: { percent: 20, resetsAt: null },
+          monthly: { percent: 30, resetsAt: "soon" },
+        },
+      }).windows
+    ).toEqual([
+      { label: "5h", usedPercent: 10, resetsAt: undefined },
+      { label: "7d", usedPercent: 20, resetsAt: undefined },
+      { label: "mo", usedPercent: 30, resetsAt: undefined },
+    ]);
+  });
+
+  it.each([
+    ["missing", {}],
+    ["null", { percent: null }],
+    ["string", { percent: "12" }],
+    ["boolean", { percent: true }],
+    ["NaN", { percent: Number.NaN }],
+  ])("skips a window with a %s percentage instead of reporting 0%%", (_name, window) => {
+    const result = parseOpencodeUsage({ usage: { rolling: window } });
+    expect(result.windows).toEqual([]);
+    expect(result.error).toBe("no-usage-data");
+  });
+
+  it("keeps explicit zero and clamps out-of-range percentages", () => {
+    expect(
+      parseOpencodeUsage({
+        usage: {
+          rolling: { percent: 0 },
+          weekly: { percent: -25 },
+          monthly: { percent: 150 },
+        },
+      }).windows.map(({ label, usedPercent }) => [label, usedPercent])
+    ).toEqual([
+      ["5h", 0],
+      ["7d", 0],
+      ["mo", 100],
+    ]);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+    ["empty object", {}],
+    ["null usage", { usage: null }],
+    ["obsolete flat response", { rollingUsage: { usagePercent: 50, resetInSec: 30 } }],
+  ])("reports no-usage-data for a %s body", (_name, body) => {
+    expect(parseOpencodeUsage(body)).toEqual({
+      provider: "OpenCode Go",
+      windows: [],
+      error: "no-usage-data",
+      fetchedAt: NOW,
+    });
   });
 });
 

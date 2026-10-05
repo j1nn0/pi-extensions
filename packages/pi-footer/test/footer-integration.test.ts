@@ -60,6 +60,23 @@ describe("provider footers", () => {
     footer.dispose();
   });
 
+  it.each([
+    [401, { type: "error", error: { type: "AuthError", message: "Invalid API key." } }],
+    [403, { type: "error", error: { type: "EntitlementError", message: "OpenCode Go subscription required." } }],
+  ])("hides OpenCode Go quota and error details for HTTP %i", async (status, body) => {
+    environment.setResponse(ENDPOINTS.opencode, { status, body });
+    const footer = createFooterHarness(extension, { model: OPENCODE });
+    await footer.start();
+    await settleAsync();
+
+    const secondLine = footer.plain(120)[1] ?? "";
+    expect(secondLine).toBe("6h29m");
+    for (const text of ["5h", "7d", "mo", "0%", "AuthError", "EntitlementError", "Invalid API key.", "OpenCode Go subscription required.", DUMMY_TOKENS.opencode]) {
+      expect(secondLine).not.toContain(text);
+    }
+    footer.dispose();
+  });
+
   it("renders OpenCode Go usage for a non-reasoning model", async () => {
     const footer = createFooterHarness(extension, { model: OPENCODE });
     await footer.start();
@@ -70,6 +87,19 @@ describe("provider footers", () => {
       "5h 56% ↻ 14:38 │ 7d 87% ↻ 10/07 12:00 │ mo 9% ↻ 11/01 12:00 │ 6h29m",
     ]);
     expect(environment.authorizationFor(ENDPOINTS.opencode)).toBe(`Bearer ${DUMMY_TOKENS.opencode}`);
+    footer.dispose();
+  });
+
+  it("renders fractional OpenCode Go percentages floored to whole percentages", async () => {
+    environment.setResponse(ENDPOINTS.opencode, {
+      status: 200,
+      body: { usage: { rolling: { status: "ok", percent: 12.8, resetsAt: "2026-10-02T14:38:00.000Z" } } },
+    });
+    const footer = createFooterHarness(extension, { model: OPENCODE });
+    await footer.start();
+    await settleAsync();
+
+    expect(footer.plain(120)[1]).toBe("5h 12% ↻ 14:38 │ 6h29m");
     footer.dispose();
   });
 
