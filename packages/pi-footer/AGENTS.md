@@ -17,3 +17,7 @@
 ## Verification
 
 - Add focused tests under `test/` for changed behavior, then run `pnpm check` and `pnpm test`. Run `pnpm pack:check` for packaging changes.
+
+## Release
+
+- Releases run from `.github/workflows/release.yml` on a pushed `v<version>` tag via npm Trusted Publishing; never publish manually or add npm tokens. See `docs/releasing.md`.
