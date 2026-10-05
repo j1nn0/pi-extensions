@@ -91,7 +91,7 @@ describe("context gauge", () => {
     expect(tagged).toContain(`<dim>ctx</dim> <${color}>`);
   });
 
-  it("thresholds match the Claude StatusLine", () => {
+  it("warns at 70%, 85%, and 95%", () => {
     expect([0, 69, 70, 84, 85, 94, 95].map(contextWarning)).toEqual(["", "", "!", "!", "⚠", "⚠", "COMPACT"]);
   });
 

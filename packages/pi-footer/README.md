@@ -1,9 +1,9 @@
 # @j1nn0/pi-footer
 
 A Pi extension that replaces Pi's default footer with a compact two-line status
-display modeled on a Claude Code StatusLine: model and thinking state, a context
-gauge, prompt-cache usage, subscription quota windows with reset times, session
-duration, Git branch, and the optional Context Mode "this chat" amount.
+display showing model and thinking state, context usage, prompt-cache usage,
+subscription quota windows with reset times, session duration, Git state, and
+the optional Context Mode "this chat" amount.
 
 This project is a standalone fork of [`pi-minimal-footer`](https://github.com/ogulcancelik/pi-extensions/tree/main/packages/pi-minimal-footer)
 by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the

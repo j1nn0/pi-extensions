@@ -1,7 +1,7 @@
 {
   "name": "@j1nn0/pi-footer",
   "version": "0.1.1",
-  "description": "Pi footer with a Claude Code StatusLine-style layout: model, thinking, context, cache, subscription quota, session time, Git, and Context Mode",
+  "description": "Pi footer with a compact two-line layout for model, thinking, context, cache, subscription quota, session time, Git, and Context Mode",
   "keywords": [
     "pi-package",
     "pi-extension",

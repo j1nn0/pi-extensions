@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Remove misleading Claude Code StatusLine references from the package description, README, and changelog. Documentation and metadata only; no functional change.
+
 ## [0.1.1] - 2026-10-05
 
 ### Fixed
@@ -15,7 +19,7 @@ First standalone release of `@j1nn0/pi-footer`, a fork of Can Celik's `pi-minima
 ### Added
 
 - Standalone package `@j1nn0/pi-footer` for Pi 1.x (`@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` `>=1.0.0` as peer dependencies) on Node.js `>=22.19.0`.
-- Two-line Claude Code StatusLine-style footer:
+- Two-line status footer:
   - `model · level · think ON` (or `think OFF`) from Pi's live `ctx.thinkingLevel`.
   - Context gauge from Pi's `ctx.getContextUsage()`: 10-cell bar, used percentage, `used/window` token counts, `!` / `⚠` / `COMPACT` warnings from 70% / 85% / 95%, and `?%` while the size is unknown after compaction.
   - Prompt-cache read/write (`cache R424.0k/W2.1k`).

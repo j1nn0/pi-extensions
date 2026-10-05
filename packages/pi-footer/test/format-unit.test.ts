@@ -6,7 +6,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 describe("formatTokenCount", () => {
-  it("uses one decimal for k and M like the Claude StatusLine", () => {
+  it("uses one decimal for k and M", () => {
     expect(formatTokenCount(0)).toBe("0");
     expect(formatTokenCount(999)).toBe("999");
     expect(formatTokenCount(1_000)).toBe("1.0k");
