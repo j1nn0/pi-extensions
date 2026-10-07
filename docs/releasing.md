@@ -43,7 +43,7 @@ The workflow filename is the filename only, not the `.github/workflows/` path. C
    Replace `<version>` with the package's version, such as `0.2.1` or `0.2.1-beta.1`. Tags must use plain SemVer with an optional prerelease; build metadata is rejected because npm drops it.
 3. The matching workflow checks the package name, tag/version equality, monorepo `repository.url`, main-branch ancestry, required changelog section, tests, and that the version is not already published. It also checks the Node.js/npm version floor for Trusted Publishing.
 
-Stable versions publish to the `latest` npm dist-tag. Prereleases publish to `next` and are marked as GitHub prereleases. The registry check retries up to 12 times at 10-second intervals and verifies the package name, version, dist-tag, and integrity. The GitHub Release is created only after that succeeds; it attaches the registry tarball only if its integrity matches the tarball packed from the tagged source.
+Stable versions publish to the `latest` npm dist-tag. Prereleases publish to `next` and are marked as GitHub prereleases. The registry check retries up to 30 times at 10-second intervals (about 5 minutes) and verifies the package name, version, dist-tag, and integrity. The GitHub Release is created only after that succeeds; it attaches the registry tarball only if its integrity matches the tarball packed from the tagged source.
 
 ## Recovering from a failed run
 

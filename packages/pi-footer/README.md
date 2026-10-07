@@ -187,6 +187,8 @@ anywhere. Command Code organization ids are cached in memory keyed by a hash of
 the API key, not the key itself. Context Mode output is reduced to the parsed
 "this chat" amount.
 
+For security concerns and vulnerability reporting, see the [repository security policy](../../SECURITY.md).
+
 ## Known limitations
 
 - **Command Code monthly allowance** — the API does not report a monthly usage

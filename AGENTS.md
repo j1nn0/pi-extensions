@@ -52,4 +52,4 @@ Run focused tests for the affected package, then the root checks when practical.
 - Each package owns its version and `CHANGELOG.md` section. Add a `## [<version>]` entry and commit it on `main` before tagging.
 - Use `pi-input-lock-v<version>` for pi-input-lock and `pi-footer-v<version>` for pi-footer. The matching root workflow validates package name, version, repository URL, changelog, and that the tagged commit is on `main`.
 - Publish only through the matching GitHub Actions workflow and npm Trusted Publishing (OIDC); never add or use an npm token. Stable versions publish under `latest`; prereleases publish under `next` and create GitHub prereleases.
-- See [`packages/pi-footer/docs/releasing.md`](packages/pi-footer/docs/releasing.md) for one-time publisher setup, tag commands, and recovery guidance.
+- See [`docs/releasing.md`](docs/releasing.md) for one-time publisher setup, tag commands, and recovery guidance.

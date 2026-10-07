@@ -88,6 +88,10 @@ pnpm pack:check
 PI_INPUT_LOCK=1 pi -ne -e . --tui-mode fullscreen
 ```
 
+## セキュリティ
+
+[リポジトリのセキュリティポリシー](../../SECURITY.md)を参照してください。
+
 ## ライセンス
 
 MIT License.
