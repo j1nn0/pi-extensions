@@ -199,7 +199,7 @@ jobs:
           set -euo pipefail
           # Bounded wait for registry propagation. Never publish again from here.
           # shellcheck disable=SC2016 # JavaScript template literals, not shell expansions.
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 30); do
             if META=$(npm view "$PACKAGE_NAME@$VERSION" name version dist.integrity dist-tags --json --prefer-online 2>/dev/null) \
               && printf '%s' "$META" | node -e '
                 const m = JSON.parse(require("fs").readFileSync(0, "utf8"));
@@ -212,7 +212,7 @@ jobs:
               echo "npm serves $PACKAGE_NAME@$VERSION as $DIST_TAG"
               exit 0
             fi
-            echo "registry not consistent yet (attempt $attempt/12)"
+            echo "registry not consistent yet (attempt $attempt/30)"
             sleep 10
           done
           echo "::error::npm publish succeeded but the registry did not confirm $PACKAGE_NAME@$VERSION ($DIST_TAG, integrity). Inspect npm before retrying; do not re-publish."
