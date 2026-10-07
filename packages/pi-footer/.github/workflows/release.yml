@@ -1,0 +1,258 @@
+name: Release
+
+# Pushing a `v<version>` tag (e.g. `v0.1.1`) releases that version:
+# check -> npm publish (Trusted Publishing, OIDC) -> registry verification -> GitHub Release.
+# The GitHub Release is created only after npm serves the published version.
+# npm Trusted Publisher setup: see docs/releasing.md.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+# Never run two releases of the same tag at once, and never cancel a publish in progress.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: '@j1nn0/pi-footer'
+  REPOSITORY_URL: 'git+https://github.com/j1nn0/pi-footer.git'
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dist_tag: ${{ steps.meta.outputs.dist_tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so the tagged commit can be checked against main.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/setup@v2
+        with:
+          install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Verify tag, package identity, and version
+        id: meta
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Plain SemVer with an optional prerelease; build metadata is rejected (npm drops it).
+          SEMVER='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$TAG" =~ $SEMVER ]]; then
+            echo "::error::tag '$TAG' is not of the form v<major>.<minor>.<patch>[-<prerelease>]"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          PKG_NAME=$(node -p "require('./package.json').name")
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_REPOSITORY=$(node -p "require('./package.json').repository?.url ?? ''")
+          if [ "$PKG_NAME" != "$PACKAGE_NAME" ]; then
+            echo "::error::package.json name '$PKG_NAME' is not '$PACKAGE_NAME'"
+            exit 1
+          fi
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::tag version '$VERSION' does not match package.json version '$PKG_VERSION'"
+            exit 1
+          fi
+          # Trusted Publishing requires repository.url to match the publishing repository exactly.
+          if [ "$PKG_REPOSITORY" != "$REPOSITORY_URL" ]; then
+            echo "::error::package.json repository.url '$PKG_REPOSITORY' is not '$REPOSITORY_URL'"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::tagged commit $(git rev-parse HEAD) is not on main; push main before the tag"
+            exit 1
+          fi
+          if [[ "$VERSION" == *-* ]]; then
+            echo "dist_tag=next" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Verify changelog section
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Checked before publishing so a missing entry cannot leave npm released without a GitHub Release.
+          if ! grep -Fq "## [$VERSION]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section"
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm check
+      - name: Test
+        run: pnpm test
+      - name: Pack check
+        run: pnpm pack:check
+
+  publish:
+    name: Publish to npm
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      integrity: ${{ steps.pack.outputs.integrity }}
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      DIST_TAG: ${{ needs.check.outputs.dist_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@v2
+        with:
+          install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Verify Node and npm versions
+        run: |
+          set -euo pipefail
+          echo "node $(node --version)"
+          echo "npm $(npm --version)"
+          # Trusted Publishing requires npm >= 11.5.1 and Node >= 22.14.0. Fail rather than
+          # install a floating npm, so the toolchain stays the one bundled with Node 24.
+          # shellcheck disable=SC2016 # JavaScript template literals, not shell expansions.
+          node -e '
+            const atLeast = (v, min) => {
+              const a = v.replace(/^v/, "").split(/[.-]/).map(Number);
+              for (let i = 0; i < 3; i++) if (a[i] !== min[i]) return a[i] > min[i];
+              return true;
+            };
+            const npm = require("child_process").execSync("npm --version").toString().trim();
+            if (!atLeast(process.version, [22, 14, 0])) { console.error(`::error::Node ${process.version} < 22.14.0`); process.exit(1); }
+            if (!atLeast(npm, [11, 5, 1])) { console.error(`::error::npm ${npm} < 11.5.1 required for Trusted Publishing`); process.exit(1); }
+          '
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Refuse an already published version
+        run: |
+          set -euo pipefail
+          if OUT=$(npm view "$PACKAGE_NAME@$VERSION" version --json --prefer-online 2>/dev/null); then
+            echo "::error::$PACKAGE_NAME@$VERSION is already on npm; npm versions are immutable, bump the version instead"
+            exit 1
+          fi
+          CODE=$(printf '%s' "$OUT" | node -e 'try { console.log(JSON.parse(require("fs").readFileSync(0, "utf8")).error.code) } catch { console.log("unknown") }')
+          if [ "$CODE" != "E404" ]; then
+            echo "::error::could not determine whether $PACKAGE_NAME@$VERSION exists (npm error: $CODE)"
+            exit 1
+          fi
+          echo "$PACKAGE_NAME@$VERSION is not published yet"
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          # Same npm and source as the publish step, so the integrity must match the registry.
+          rm -rf /tmp/pi-footer-release
+          mkdir -p /tmp/pi-footer-release
+          npm pack --json --pack-destination /tmp/pi-footer-release > /tmp/pi-footer-pack.json
+          INTEGRITY=$(node -p 'require("/tmp/pi-footer-pack.json")[0].integrity')
+          echo "integrity=$INTEGRITY" >> "$GITHUB_OUTPUT"
+          ls -l /tmp/pi-footer-release
+      - name: Publish
+        # Authenticates through the npm Trusted Publisher (OIDC); provenance is generated automatically.
+        run: npm publish --access public --tag "$DIST_TAG"
+      - name: Verify npm registry
+        env:
+          INTEGRITY: ${{ steps.pack.outputs.integrity }}
+        run: |
+          set -euo pipefail
+          # Bounded wait for registry propagation. Never publish again from here.
+          # shellcheck disable=SC2016 # JavaScript template literals, not shell expansions.
+          for attempt in $(seq 1 12); do
+            if META=$(npm view "$PACKAGE_NAME@$VERSION" name version dist.integrity dist-tags --json --prefer-online 2>/dev/null) \
+              && printf '%s' "$META" | node -e '
+                const m = JSON.parse(require("fs").readFileSync(0, "utf8"));
+                const { PACKAGE_NAME, VERSION, DIST_TAG, INTEGRITY } = process.env;
+                const ok = m.name === PACKAGE_NAME && m.version === VERSION
+                  && m["dist.integrity"] === INTEGRITY && m["dist-tags"]?.[DIST_TAG] === VERSION;
+                console.log(`attempt: name=${m.name} version=${m.version} ${DIST_TAG}=${m["dist-tags"]?.[DIST_TAG]} integrity ${m["dist.integrity"] === INTEGRITY ? "matches" : "differs"}`);
+                process.exit(ok ? 0 : 1);
+              '; then
+              echo "npm serves $PACKAGE_NAME@$VERSION as $DIST_TAG"
+              exit 0
+            fi
+            echo "registry not consistent yet (attempt $attempt/12)"
+            sleep 10
+          done
+          echo "::error::npm publish succeeded but the registry did not confirm $PACKAGE_NAME@$VERSION ($DIST_TAG, integrity). Inspect npm before retrying; do not re-publish."
+          exit 1
+
+  release:
+    name: Release (GitHub)
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.check.outputs.version }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
+      INTEGRITY: ${{ needs.publish.outputs.integrity }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Extract changelog
+        run: |
+          set -euo pipefail
+          awk -v header="## [$VERSION]" '
+            index($0, header) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > /tmp/release-notes.md
+          if ! grep -q '[^[:space:]]' /tmp/release-notes.md; then
+            echo "::error::CHANGELOG.md section '## [$VERSION]' is missing or empty"
+            exit 1
+          fi
+      - name: Fetch published tarball
+        run: |
+          set -euo pipefail
+          # Attach the exact bytes npm serves; the publish job proved they equal the tagged-source pack.
+          rm -rf /tmp/pi-footer-release
+          mkdir -p /tmp/pi-footer-release
+          npm pack "$PACKAGE_NAME@$VERSION" --json --prefer-online --pack-destination /tmp/pi-footer-release > /tmp/pi-footer-pack.json
+          ACTUAL=$(node -p 'require("/tmp/pi-footer-pack.json")[0].integrity')
+          if [ "$ACTUAL" != "$INTEGRITY" ]; then
+            echo "::error::registry tarball integrity differs from the tarball packed from $TAG"
+            exit 1
+          fi
+          ls -l /tmp/pi-footer-release
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # --verify-tag: release the pushed tag only; never create a tag here.
+          gh release create "$TAG" /tmp/pi-footer-release/*.tgz \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$PACKAGE_NAME v$VERSION" \
+            --notes-file /tmp/release-notes.md \
+            --prerelease="$PRERELEASE"

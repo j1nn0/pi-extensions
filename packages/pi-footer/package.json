@@ -1,0 +1,65 @@
+{
+  "name": "@j1nn0/pi-footer",
+  "version": "0.1.1",
+  "description": "Pi footer with a compact two-line layout for model, thinking, context, cache, subscription quota, session time, Git, and Context Mode",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "footer",
+    "context",
+    "usage",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "author": "j1nn0",
+  "contributors": [
+    "Can Celik (https://github.com/ogulcancelik)"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j1nn0/pi-footer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/j1nn0/pi-footer/issues"
+  },
+  "homepage": "https://github.com/j1nn0/pi-footer#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "type": "module",
+  "packageManager": "pnpm@11.28.3",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.0.0",
+    "@earendil-works/pi-tui": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.8"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "pack:check": "pnpm pack --pack-destination /tmp"
+  }
+}
