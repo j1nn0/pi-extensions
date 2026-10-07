@@ -48,18 +48,17 @@
     "access": "public"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
-    "@types/node": "^24.0.0",
-    "typescript": "^7.0.0",
-    "vitest": "^4.1.8"
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit -p tsconfig.json",
     "pack:check": "pnpm pack --pack-destination /tmp"
   }
 }

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const root = new URL("../", import.meta.url);
 const rootPath = new URL(root).pathname;
 
-describe("standalone package metadata", () => {
+describe("package metadata", () => {
   it("declares the Pi extension and packages all required files", async () => {
     const packageJson = JSON.parse(await readFile(join(rootPath, "package.json"), "utf8")) as {
       name: string;
@@ -30,9 +30,6 @@ describe("standalone package metadata", () => {
     expect(Object.keys(packageJson.dependencies ?? {}).filter((name) => name.startsWith("@earendil-works/"))).toEqual([]);
     expect(packageJson.peerDependencies["@earendil-works/pi-coding-agent"]).toBe(">=1.0.0");
     expect(packageJson.peerDependencies["@earendil-works/pi-tui"]).toBe(">=1.0.0");
-    expect(packageJson.devDependencies["@earendil-works/pi-ai"]).toBe("1.0.0");
-    expect(packageJson.devDependencies["@earendil-works/pi-coding-agent"]).toBe("1.0.0");
-    expect(packageJson.devDependencies["@earendil-works/pi-tui"]).toBe("1.0.0");
     expect(existsSync(join(rootPath, "assets"))).toBe(false);
 
     const license = await readFile(join(rootPath, "LICENSE"), "utf8");

@@ -1,6 +1,15 @@
 {
   "name": "pi-extensions",
   "private": true,
+  "description": "A monorepo for Pi coding agent extensions and developer tools.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j1nn0/pi-extensions.git"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "packageManager": "pnpm@11.28.3",
   "scripts": {
     "check": "pnpm -r check",

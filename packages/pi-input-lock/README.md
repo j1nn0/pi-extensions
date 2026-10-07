@@ -10,6 +10,11 @@ UI (for example a permission dialog from Pi or another extension) has focus, it
 keeps working and its input is not blocked. The original editor and draft text
 are restored when the lock is released.
 
+## Requirements
+
+- Pi `>= 1.0.0`
+- Node.js `>= 22.19.0`
+
 ## Installation
 
 ```bash

@@ -24,7 +24,7 @@ type Deferred<T> = {
 };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PI_VERSION = "0.85.1";
+const PI_VERSION = "1.0.0";
 const SCRIPT_COMMAND = "script";
 const PTY_ROWS = 40;
 const PTY_COLS = 120;
@@ -906,7 +906,7 @@ async function runTier1AndTier2(
   activePty = new PtySession(command, smokeEnv, candidateIndex);
 
   try {
-    await activePty.waitForText("boot", /pi v0\.85\.1/, 0, TIMEOUTS.boot);
+    await activePty.waitForText("boot", /v1\.0\.0/, 0, TIMEOUTS.boot);
     assertAlive("boot");
     logStage("boot");
     await activePty.waitForText("extension-load", /\[Extensions\][\s\S]{0,2000}\bpackage\b/, 0, TIMEOUTS.boot);

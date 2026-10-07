@@ -11,7 +11,7 @@
 ## Workspace rules
 
 - This is a private pnpm workspace. Install and run aggregate commands from the repository root; the publishable extensions live under `packages/` and remain independent packages.
-- Use pnpm 11.28.3, Node.js 24 or newer for the full workspace, and preserve the root lockfile. Do not turn the repository root into an installable Pi extension.
+- Use pnpm 11.28.3, Node.js `>=22.19.0` for the full workspace, and preserve the root lockfile. Do not turn the repository root into an installable Pi extension.
 - Target package scripts with `pnpm --filter @j1nn0/pi-input-lock ...` or `pnpm --filter @j1nn0/pi-footer ...`; avoid commands that accidentally operate on the wrong package.
 - Keep user-facing documentation aligned with behavior. pi-input-lock has English and Japanese READMEs; update both when changing its user-facing behavior.
 - Use Conventional Commit messages (`feat:`, `fix:`, `docs:`, `ci:`, `test:`, `chore:`; use `feat!:` for breaking changes).

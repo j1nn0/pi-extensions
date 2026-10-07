@@ -9,7 +9,7 @@ A pnpm monorepo for two independently installable Pi extensions. Each package is
 
 ## Development
 
-Use Node.js 24 or newer and pnpm 11.28.3. From the repository root, install the workspace dependencies:
+Use Node.js `>=22.19.0` and pnpm 11.28.3. From the repository root, install the workspace dependencies:
 
 ```sh
 pnpm install --frozen-lockfile

@@ -13,9 +13,9 @@ permissions:
   contents: read
 
 jobs:
-  minimum:
+  baseline:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    name: Minimum Pi compatibility (${{ matrix.package }})
+    name: Baseline Pi compatibility (${{ matrix.package }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,9 +27,9 @@ jobs:
           - package: pi-input-lock
             filter: '@j1nn0/pi-input-lock'
             path: packages/pi-input-lock
-            pi_ai_version: '0.84.2'
-            pi_coding_agent_version: '0.84.2'
-            pi_tui_version: '0.84.2'
+            pi_ai_version: '1.0.0'
+            pi_coding_agent_version: '1.0.0'
+            pi_tui_version: '1.0.0'
           - package: pi-footer
             filter: '@j1nn0/pi-footer'
             path: packages/pi-footer
@@ -43,7 +43,7 @@ jobs:
           install: false
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '22.19.0'
           cache: pnpm
       - name: Prepare compatibility copy
         run: |
@@ -128,16 +128,7 @@ jobs:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm check
       - name: Test
-        if: matrix.package == 'pi-input-lock'
         working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm test
-      - name: Test (metadata excluded for latest dependencies)
-        if: matrix.package == 'pi-footer'
-        working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
-        env:
-          PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
-        # The metadata test asserts the repository's pinned minimum Pi devDependencies,
-        # which this copy deliberately replaces with the latest release.
-        run: pnpm test --exclude test/package-metadata.test.ts

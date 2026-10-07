@@ -1,6 +1,14 @@
 packages:
   - "packages/*"
 
+catalog:
+  "@earendil-works/pi-ai": "1.0.0"
+  "@earendil-works/pi-coding-agent": "1.0.0"
+  "@earendil-works/pi-tui": "1.0.0"
+  "@types/node": "^22.19.0"
+  typescript: "^7.0.0"
+  vitest: "^4.1.8"
+
 allowBuilds:
   "@google/genai": true
   esbuild: false

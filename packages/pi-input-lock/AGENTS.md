@@ -47,7 +47,7 @@ Key invariants that are hard to infer from any single function:
 
 ## Commands
 
-- `pnpm check` — typecheck only (`pnpm lint` is the same command).
+- `pnpm check` — typecheck only.
 - `pnpm test` — Vitest. Single file: `pnpm exec vitest run test/router.test.ts`.
   Single case: `pnpm exec vitest run -t "<test name>"`.
 - `pnpm pack:check` — packs to `/tmp`; verifies the `files` list in package.json.
@@ -55,7 +55,7 @@ Key invariants that are hard to infer from any single function:
   Requires the `script` command (util-linux) and a working `pnpm pack`; runs fully offline.
   Slow; run it when touching extension wiring, commands, or release metadata.
 - Manual check: `PI_INPUT_LOCK=1 pi -ne -e . --tui-mode fullscreen`.
-- pnpm only (`packageManager: pnpm@11.28.3`, Node >= 24); CI uses `--frozen-lockfile`.
+- pnpm only (`packageManager: pnpm@11.28.3`, Node >=22.19.0); CI uses `--frozen-lockfile`.
 
 ## Testing
 
@@ -72,8 +72,8 @@ Key invariants that are hard to infer from any single function:
   (`additionalProperties: false`), the option tables in both READMEs, and the
   "configuration" / "user config paths" tests.
 - Pi version bump → devDependencies in package.json, `PI_VERSION` **and** the hardcoded
-  boot regex `/pi v0\.85\.1/` in `scripts/pty-smoke.ts`, the `peerDependencies` range, and
-  the pinned minimum in `.github/workflows/pi-compatibility.yml`.
+  boot regex `/v1\.0\.0/` in `scripts/pty-smoke.ts`, the `peerDependencies` range, and
+  the 1.0.0 baseline in `.github/workflows/pi-compatibility.yml`.
 - Release → bump `version`, add a `## [x.y.z]` section to CHANGELOG.md (the release
   workflow extracts it by awk and fails the tag if `v<version>` does not match
   package.json), then push the tag.
