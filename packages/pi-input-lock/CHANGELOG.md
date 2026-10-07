@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1-rc.0]
+
+### Changed
+
+- Validate the monorepo release pipeline after migrating `@j1nn0/pi-input-lock` to `j1nn0/pi-extensions`.
+
 ## [0.2.0] - 2026-09-06
 
 - Remove the deprecated `/lock` compatibility alias; use `/input-lock` instead.
