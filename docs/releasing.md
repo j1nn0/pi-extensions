@@ -7,7 +7,7 @@ The extensions are released independently from this monorepo. Each package has i
 | pi-input-lock | `@j1nn0/pi-input-lock` | `packages/pi-input-lock` | `release-pi-input-lock.yml` | `pi-input-lock-v<version>` |
 | pi-footer | `@j1nn0/pi-footer` | `packages/pi-footer` | `release-pi-footer.yml` | `pi-footer-v<version>` |
 
-A release runs checks, publishes to npm through GitHub Actions OIDC, verifies the registry version and tarball integrity, then creates the GitHub Release. The root monorepo is not an installable Pi extension; publish and install the individual npm packages.
+A release runs checks, uses `pnpm pack` to resolve workspace `catalog:` references in the packed manifest, then publishes that exact tarball to npm through GitHub Actions OIDC. The workflow verifies the registry package name, version, dist-tag, and integrity before creating the GitHub Release. The root monorepo is not an installable Pi extension; publish and install the individual npm packages.
 
 ## One-time npm Trusted Publisher setup
 
@@ -43,7 +43,7 @@ The workflow filename is the filename only, not the `.github/workflows/` path. C
    Replace `<version>` with the package's version, such as `0.2.1` or `0.2.1-beta.1`. Tags must use plain SemVer with an optional prerelease; build metadata is rejected because npm drops it.
 3. The matching workflow checks the package name, tag/version equality, monorepo `repository.url`, main-branch ancestry, required changelog section, tests, and that the version is not already published. It also checks the Node.js/npm version floor for Trusted Publishing.
 
-Stable versions publish to the `latest` npm dist-tag. Prereleases publish to `next` and are marked as GitHub prereleases. The registry check retries up to 30 times at 10-second intervals (about 5 minutes) and verifies the package name, version, dist-tag, and integrity. The GitHub Release is created only after that succeeds; it attaches the registry tarball only if its integrity matches the tarball packed from the tagged source.
+Stable versions publish to the `latest` npm dist-tag. Prereleases publish to `next` and are marked as GitHub prereleases. The registry check retries up to 30 times at 10-second intervals (about 5 minutes) and verifies the package name, version, dist-tag, and integrity. The GitHub Release is created only after that succeeds; it attaches the registry-served tarball only if its integrity matches the packed publish tarball.
 
 ## Recovering from a failed run
 

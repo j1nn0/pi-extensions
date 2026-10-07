@@ -180,17 +180,44 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
-          # Same npm and source as the publish step, so the integrity must match the registry.
-          rm -rf /tmp/pi-input-lock-release
-          mkdir -p /tmp/pi-input-lock-release
-          npm pack --json --pack-destination /tmp/pi-input-lock-release > /tmp/pi-input-lock-pack.json
-          INTEGRITY=$(node -p 'require("/tmp/pi-input-lock-pack.json")[0].integrity')
+          # Resolve workspace catalog references and publish these exact tarball bytes.
+          PACK_DIR="/tmp/pi-input-lock-release"
+          rm -rf "$PACK_DIR"
+          mkdir -p "$PACK_DIR"
+          pnpm pack --pack-destination "$PACK_DIR"
+          shopt -s nullglob
+          TARBALLS=("$PACK_DIR"/*.tgz)
+          if (( ${#TARBALLS[@]} != 1 )); then
+            echo "::error::expected exactly one tarball in $PACK_DIR, found ${#TARBALLS[@]}"
+            exit 1
+          fi
+          TARBALL="${TARBALLS[0]}"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          INTEGRITY=$(TARBALL="$TARBALL" node -e 'const fs = require("node:fs"); const crypto = require("node:crypto"); console.log(`sha512-${crypto.createHash("sha512").update(fs.readFileSync(process.env.TARBALL)).digest("base64")}`)')
           echo "integrity=$INTEGRITY" >> "$GITHUB_OUTPUT"
-          ls -l /tmp/pi-input-lock-release
+          tar -xOzf "$TARBALL" package/package.json | node -e '
+            const assert = require("node:assert/strict");
+            const pkg = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+            const [packageName, version, repositoryUrl] = process.argv.slice(1);
+            assert.equal(pkg.name, packageName, "packed manifest name mismatch");
+            assert.equal(pkg.version, version, "packed manifest version mismatch");
+            assert.equal(pkg.repository?.url, repositoryUrl, "packed manifest repository.url mismatch");
+            for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+              for (const [name, spec] of Object.entries(pkg[field] ?? {})) {
+                assert(!(typeof spec === "string" && /^catalog(:|$)/.test(spec)), `${field}.${name} still uses catalog:`);
+              }
+            }
+            for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) {
+              const spec = pkg.devDependencies?.[name];
+              assert(typeof spec === "string" && spec.length > 0, `packed devDependencies is missing ${name}`);
+              assert(!/^catalog(:|$)/.test(spec), `packed devDependencies.${name} is not concrete`);
+            }
+          ' "$PACKAGE_NAME" "$VERSION" "$REPOSITORY_URL"
+          ls -l "$PACK_DIR"
       - name: Publish
         # Authenticates through the npm Trusted Publisher (OIDC); provenance is generated automatically.
         working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
-        run: npm publish --access public --tag "$DIST_TAG"
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "$DIST_TAG"
       - name: Verify npm registry
         working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         env:
