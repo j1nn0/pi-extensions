@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.2-rc.1]
 
 ### Changed
 
 - Clarify package description and documentation to describe the footer independently of external UI designs.
+- Harden Command Code token cache fingerprinting with a process-local keyed HMAC.
 
 ## [0.1.2-rc.0]
 
