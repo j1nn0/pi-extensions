@@ -38,7 +38,7 @@ jobs:
             pi_tui_version: '1.0.0'
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/setup@v2
+      - uses: pnpm/setup@v3
         with:
           install: false
       - uses: actions/setup-node@v7
@@ -95,7 +95,7 @@ jobs:
             path: packages/pi-footer
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/setup@v2
+      - uses: pnpm/setup@v3
         with:
           install: false
       - uses: actions/setup-node@v7
