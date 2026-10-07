@@ -6,6 +6,12 @@
 
 - Clarify package description and documentation to describe the footer independently of external UI designs.
 
+## [0.1.2-rc.0]
+
+### Changed
+
+- Validate the monorepo release pipeline after migrating `@j1nn0/pi-footer` to `j1nn0/pi-extensions`.
+
 ## [0.1.1] - 2026-10-05
 
 ### Fixed

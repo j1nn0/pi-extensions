@@ -1,6 +1,6 @@
 {
   "name": "@j1nn0/pi-footer",
-  "version": "0.1.1",
+  "version": "0.1.2-rc.0",
   "description": "Pi footer with a compact two-line layout for model, thinking, context, cache, subscription quota, session time, Git, and Context Mode",
   "keywords": [
     "pi-package",
