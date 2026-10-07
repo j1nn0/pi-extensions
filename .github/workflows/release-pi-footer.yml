@@ -1,24 +1,26 @@
-name: Release
+name: Release pi-footer
 
-# Pushing a `v<version>` tag (e.g. `v0.1.1`) releases that version:
+# Pushing a `pi-footer-v<version>` tag releases that package version:
 # check -> npm publish (Trusted Publishing, OIDC) -> registry verification -> GitHub Release.
 # The GitHub Release is created only after npm serves the published version.
-# npm Trusted Publisher setup: see docs/releasing.md.
+# npm Trusted Publisher setup: see packages/pi-footer/docs/releasing.md.
 on:
   push:
     tags:
-      - 'v*'
+      - 'pi-footer-v*'
 
 permissions: {}
 
-# Never run two releases of the same tag at once, and never cancel a publish in progress.
+# Never run two releases of the same package tag at once, and never cancel a publish in progress.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-pi-footer-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   PACKAGE_NAME: '@j1nn0/pi-footer'
-  REPOSITORY_URL: 'git+https://github.com/j1nn0/pi-footer.git'
+  REPOSITORY_URL: 'git+https://github.com/j1nn0/pi-extensions.git'
+  PACKAGE_DIR: packages/pi-footer
+  TAG_PREFIX: pi-footer-v
 
 jobs:
   check:
@@ -45,17 +47,22 @@ jobs:
           cache: pnpm
       - name: Verify tag, package identity, and version
         id: meta
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           # Plain SemVer with an optional prerelease; build metadata is rejected (npm drops it).
-          SEMVER='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
-          if [[ ! "$TAG" =~ $SEMVER ]]; then
-            echo "::error::tag '$TAG' is not of the form v<major>.<minor>.<patch>[-<prerelease>]"
+          SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ "$TAG" != "$TAG_PREFIX"* ]]; then
+            echo "::error::tag '$TAG' does not start with '$TAG_PREFIX'"
             exit 1
           fi
-          VERSION="${TAG#v}"
+          VERSION="${TAG#"$TAG_PREFIX"}"
+          if [[ ! "$VERSION" =~ $SEMVER ]]; then
+            echo "::error::tag '$TAG' is not of the form ${TAG_PREFIX}<major>.<minor>.<patch>[-<prerelease>]"
+            exit 1
+          fi
           PKG_NAME=$(node -p "require('./package.json').name")
           PKG_VERSION=$(node -p "require('./package.json').version")
           PKG_REPOSITORY=$(node -p "require('./package.json').repository?.url ?? ''")
@@ -85,6 +92,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Verify changelog section
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
@@ -95,12 +103,16 @@ jobs:
             exit 1
           fi
       - name: Install dependencies
+        working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
       - name: Typecheck
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: pnpm check
       - name: Test
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: pnpm test
       - name: Pack check
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: pnpm pack:check
 
   publish:
@@ -128,6 +140,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
       - name: Verify Node and npm versions
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
           echo "node $(node --version)"
@@ -146,8 +159,10 @@ jobs:
             if (!atLeast(npm, [11, 5, 1])) { console.error(`::error::npm ${npm} < 11.5.1 required for Trusted Publishing`); process.exit(1); }
           '
       - name: Install dependencies
+        working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
       - name: Refuse an already published version
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
           if OUT=$(npm view "$PACKAGE_NAME@$VERSION" version --json --prefer-online 2>/dev/null); then
@@ -162,6 +177,7 @@ jobs:
           echo "$PACKAGE_NAME@$VERSION is not published yet"
       - name: Pack tarball
         id: pack
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
           # Same npm and source as the publish step, so the integrity must match the registry.
@@ -173,8 +189,10 @@ jobs:
           ls -l /tmp/pi-footer-release
       - name: Publish
         # Authenticates through the npm Trusted Publisher (OIDC); provenance is generated automatically.
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: npm publish --access public --tag "$DIST_TAG"
       - name: Verify npm registry
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         env:
           INTEGRITY: ${{ steps.pack.outputs.integrity }}
         run: |
@@ -220,6 +238,7 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Extract changelog
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
           awk -v header="## [$VERSION]" '
@@ -232,6 +251,7 @@ jobs:
             exit 1
           fi
       - name: Fetch published tarball
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         run: |
           set -euo pipefail
           # Attach the exact bytes npm serves; the publish job proved they equal the tagged-source pack.
@@ -245,6 +265,7 @@ jobs:
           fi
           ls -l /tmp/pi-footer-release
       - name: Create GitHub Release
+        working-directory: ${{ github.workspace }}/${{ env.PACKAGE_DIR }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

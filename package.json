@@ -1,0 +1,11 @@
+{
+  "name": "pi-extensions",
+  "private": true,
+  "packageManager": "pnpm@11.28.3",
+  "scripts": {
+    "check": "pnpm -r check",
+    "test": "pnpm -r test",
+    "pack:check": "pnpm -r pack:check",
+    "smoke:pty": "pnpm --filter @j1nn0/pi-input-lock smoke:pty"
+  }
+}

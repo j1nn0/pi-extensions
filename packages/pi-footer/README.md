@@ -26,13 +26,13 @@ deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41
 pi install npm:@j1nn0/pi-footer
 ```
 
-Or install the latest `main` from GitHub:
+Install the package from npm; the monorepo root itself cannot be installed as a Pi extension:
 
 ```bash
-pi install git:github.com/j1nn0/pi-footer
+pi install npm:@j1nn0/pi-footer
 ```
 
-To try it for a single session from a local checkout:
+To try the local package for a single session, run from `packages/pi-footer/`:
 
 ```bash
 pi -e ./index.ts

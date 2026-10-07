@@ -17,17 +17,17 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/j1nn0/pi-footer.git"
+    "url": "git+https://github.com/j1nn0/pi-extensions.git",
+    "directory": "packages/pi-footer"
   },
   "bugs": {
-    "url": "https://github.com/j1nn0/pi-footer/issues"
+    "url": "https://github.com/j1nn0/pi-extensions/issues"
   },
-  "homepage": "https://github.com/j1nn0/pi-footer#readme",
+  "homepage": "https://github.com/j1nn0/pi-extensions/tree/main/packages/pi-footer#readme",
   "engines": {
     "node": ">=22.19.0"
   },
   "type": "module",
-  "packageManager": "pnpm@11.28.3",
   "pi": {
     "extensions": [
       "./index.ts"

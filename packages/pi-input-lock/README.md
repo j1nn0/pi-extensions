@@ -51,7 +51,7 @@ A recommended combined configuration:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/j1nn0/pi-input-lock/main/pi-input-lock.schema.json",
+  "$schema": "https://raw.githubusercontent.com/j1nn0/pi-extensions/main/packages/pi-input-lock/pi-input-lock.schema.json",
   "toggleKey": "ctrl+alt+i",
   "allowToolExpandInWatch": true,
   "unlockPolicy": "manual"

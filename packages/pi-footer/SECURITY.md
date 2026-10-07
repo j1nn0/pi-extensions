@@ -9,7 +9,7 @@ Please always use the latest release.
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, report a vulnerability through GitHub's security advisory feature at https://github.com/j1nn0/pi-footer/security/advisories/new.
+Since both extensions share a monorepo, GitHub advisories are repository-level and cannot be scoped to one package. Report vulnerabilities through the repository's security advisory feature: https://github.com/j1nn0/pi-extensions/security/advisories/new.
 
 This extension reads provider credentials to query subscription quota endpoints. Reports about credential exposure, credentials being sent to unintended endpoints, or credentials appearing in footer output are especially welcome.
 

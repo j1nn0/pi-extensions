@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# Runtime logs
+logs/
+*.log
+
+# OS and editor files
+.DS_Store
+*.swp
+
+# Pi project-local state
+.pi/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Test and package artifacts
+coverage/
+*.tgz
+config.json

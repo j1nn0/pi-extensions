@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package-checks:
+    name: Package checks (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - pi-input-lock
+          - pi-footer
+        include:
+          - package: pi-input-lock
+            path: packages/pi-input-lock
+          - package: pi-footer
+            path: packages/pi-footer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
+        with:
+          install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: ${{ github.workspace }}/${{ matrix.path }}
+        run: pnpm check
+      - name: Test
+        working-directory: ${{ github.workspace }}/${{ matrix.path }}
+        run: pnpm test
+      - name: Pack check
+        working-directory: ${{ github.workspace }}/${{ matrix.path }}
+        run: pnpm pack:check
+
+  pty-smoke:
+    name: PTY Smoke (pi-input-lock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
+        with:
+          install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+      - name: Version reporting
+        working-directory: ${{ github.workspace }}
+        run: pnpm --filter @j1nn0/pi-input-lock exec pi --version
+      - name: PTY smoke
+        working-directory: ${{ github.workspace }}
+        run: pnpm --filter @j1nn0/pi-input-lock smoke:pty

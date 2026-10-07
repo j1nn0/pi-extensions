@@ -14,8 +14,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/j1nn0/pi-input-lock.git"
+    "url": "git+https://github.com/j1nn0/pi-extensions.git",
+    "directory": "packages/pi-input-lock"
   },
+  "bugs": {
+    "url": "https://github.com/j1nn0/pi-extensions/issues"
+  },
+  "homepage": "https://github.com/j1nn0/pi-extensions/tree/main/packages/pi-input-lock#readme",
   "files": [
     "src",
     "index.ts",
@@ -59,7 +64,6 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@11.22.0",
   "pi": {
     "extensions": [
       "./index.ts"

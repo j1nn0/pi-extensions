@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/j1nn0/pi-input-lock/main/pi-input-lock.schema.json",
+  "$id": "https://raw.githubusercontent.com/j1nn0/pi-extensions/main/packages/pi-input-lock/pi-input-lock.schema.json",
   "title": "pi-input-lock configuration",
   "description": "Configuration for @j1nn0/pi-input-lock.",
   "type": "object",

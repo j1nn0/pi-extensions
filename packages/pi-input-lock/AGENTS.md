@@ -63,7 +63,7 @@ Key invariants that are hard to infer from any single function:
   Requires the `script` command (util-linux) and a working `pnpm pack`; runs fully offline.
   Slow; run it when touching extension wiring, commands, or release metadata.
 - Manual check: `PI_INPUT_LOCK=1 pi -ne -e . --tui-mode fullscreen`.
-- pnpm only (`packageManager: pnpm@11.22.0`, Node >= 24); CI uses `--frozen-lockfile`.
+- pnpm only (`packageManager: pnpm@11.28.3`, Node >= 24); CI uses `--frozen-lockfile`.
 
 ## Testing
 

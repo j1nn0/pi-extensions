@@ -15,8 +15,27 @@ permissions:
 jobs:
   minimum:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    name: Minimum Pi compatibility
+    name: Minimum Pi compatibility (${{ matrix.package }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - pi-input-lock
+          - pi-footer
+        include:
+          - package: pi-input-lock
+            filter: '@j1nn0/pi-input-lock'
+            path: packages/pi-input-lock
+            pi_ai_version: '0.84.2'
+            pi_coding_agent_version: '0.84.2'
+            pi_tui_version: '0.84.2'
+          - package: pi-footer
+            filter: '@j1nn0/pi-footer'
+            path: packages/pi-footer
+            pi_ai_version: '1.0.0'
+            pi_coding_agent_version: '1.0.0'
+            pi_tui_version: '1.0.0'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v2
@@ -34,28 +53,46 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/compat-min/"
       - name: Install minimum supported Pi dependencies
         working-directory: ${{ runner.temp }}/compat-min
-        run: pnpm add -D @earendil-works/pi-ai@0.84.2 @earendil-works/pi-coding-agent@0.84.2 @earendil-works/pi-tui@0.84.2 --config.minimumReleaseAge=0
+        run: >-
+          pnpm --filter '${{ matrix.filter }}' add -D
+          @earendil-works/pi-ai@${{ matrix.pi_ai_version }}
+          @earendil-works/pi-coding-agent@${{ matrix.pi_coding_agent_version }}
+          @earendil-works/pi-tui@${{ matrix.pi_tui_version }}
+          --config.minimumReleaseAge=0
       - name: Report resolved Pi versions
-        working-directory: ${{ runner.temp }}/compat-min
+        working-directory: ${{ runner.temp }}/compat-min/${{ matrix.path }}
         run: |
           set -euo pipefail
           pnpm list --depth 0
           node -e 'const fs = require("node:fs"); for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) { const version = JSON.parse(fs.readFileSync(`node_modules/${name}/package.json`, "utf8")).version; console.log(`${name}@${version}`); }'
       - name: Typecheck
-        working-directory: ${{ runner.temp }}/compat-min
+        working-directory: ${{ runner.temp }}/compat-min/${{ matrix.path }}
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm check
       - name: Test
-        working-directory: ${{ runner.temp }}/compat-min
+        working-directory: ${{ runner.temp }}/compat-min/${{ matrix.path }}
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm test
 
   latest:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    name: Latest Pi compatibility
+    name: Latest Pi compatibility (${{ matrix.package }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - pi-input-lock
+          - pi-footer
+        include:
+          - package: pi-input-lock
+            filter: '@j1nn0/pi-input-lock'
+            path: packages/pi-input-lock
+          - package: pi-footer
+            filter: '@j1nn0/pi-footer'
+            path: packages/pi-footer
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v2
@@ -73,20 +110,34 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/compat-latest/"
       - name: Install latest Pi dependencies
         working-directory: ${{ runner.temp }}/compat-latest
-        run: pnpm add -D @earendil-works/pi-ai@latest @earendil-works/pi-coding-agent@latest @earendil-works/pi-tui@latest --config.minimumReleaseAge=0
+        run: >-
+          pnpm --filter '${{ matrix.filter }}' add -D
+          @earendil-works/pi-ai@latest
+          @earendil-works/pi-coding-agent@latest
+          @earendil-works/pi-tui@latest
+          --config.minimumReleaseAge=0
       - name: Report resolved Pi versions
-        working-directory: ${{ runner.temp }}/compat-latest
+        working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
         run: |
           set -euo pipefail
           pnpm list --depth 0
           node -e 'const fs = require("node:fs"); for (const name of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"]) { const version = JSON.parse(fs.readFileSync(`node_modules/${name}/package.json`, "utf8")).version; console.log(`${name}@${version}`); }'
       - name: Typecheck
-        working-directory: ${{ runner.temp }}/compat-latest
+        working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm check
       - name: Test
-        working-directory: ${{ runner.temp }}/compat-latest
+        if: matrix.package == 'pi-input-lock'
+        working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
         env:
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
         run: pnpm test
+      - name: Test (metadata excluded for latest dependencies)
+        if: matrix.package == 'pi-footer'
+        working-directory: ${{ runner.temp }}/compat-latest/${{ matrix.path }}
+        env:
+          PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
+        # The metadata test asserts the repository's pinned minimum Pi devDependencies,
+        # which this copy deliberately replaces with the latest release.
+        run: pnpm test --exclude test/package-metadata.test.ts
