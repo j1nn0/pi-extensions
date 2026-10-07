@@ -139,6 +139,65 @@ describe("provider footers", () => {
     footer.dispose();
   });
 
+  it("isolates cache entries per token and re-fetches whoami after a token switch", async () => {
+    const first = createFooterHarness(extension, { model: COMMAND_CODE });
+    await first.start();
+    await settleAsync();
+    first.dispose();
+
+    process.env.COMMAND_CODE_API_KEY = "test-token-command-code-2";
+    try {
+      const second = createFooterHarness(extension, { model: COMMAND_CODE });
+      await second.start();
+      await settleAsync();
+      second.dispose();
+    } finally {
+      delete process.env.COMMAND_CODE_API_KEY;
+    }
+
+    expect(environment.requests.filter((request) => request.url === ENDPOINTS.commandCodeWhoami)).toHaveLength(2);
+  });
+
+  it("re-fetches whoami for the same token after resetCommandCodeOrgCache", async () => {
+    const first = createFooterHarness(extension, { model: COMMAND_CODE });
+    await first.start();
+    await settleAsync();
+    first.dispose();
+
+    resetCommandCodeOrgCache();
+
+    const second = createFooterHarness(extension, { model: COMMAND_CODE });
+    await second.start();
+    await settleAsync();
+    second.dispose();
+
+    expect(environment.requests.filter((request) => request.url === ENDPOINTS.commandCodeWhoami)).toHaveLength(2);
+  });
+
+  it("does not cache whoami failures and retries on the next fetch", async () => {
+    environment.setResponse(ENDPOINTS.commandCodeWhoami, { status: 401, body: { error: "unauthorized" } });
+
+    const first = createFooterHarness(extension, { model: COMMAND_CODE });
+    await first.start();
+    await settleAsync();
+    first.dispose();
+
+    const orgCredits = `${ENDPOINTS.commandCodeCredits}?orgId=org_123`;
+    environment.setResponse(ENDPOINTS.commandCodeWhoami, { status: 200, body: { success: true, org: { id: "org_123" } } });
+    environment.setResponse(orgCredits, {
+      status: 200,
+      body: { windowLimits: { fiveHour: { used: 7, cap: 14, resetAt: FROZEN_NOW + 60 * 60 * 1000 } } },
+    });
+
+    const second = createFooterHarness(extension, { model: COMMAND_CODE });
+    await second.start();
+    await settleAsync();
+    second.dispose();
+
+    expect(environment.requests.filter((request) => request.url === ENDPOINTS.commandCodeWhoami)).toHaveLength(2);
+    expect(environment.requests.map((request) => request.url)).toContain(orgCredits);
+  });
+
   it("shows no quota and makes no request for unsupported providers", async () => {
     const footer = createFooterHarness(extension, { model: { provider: "anthropic", id: "claude-opus-5", reasoning: true } });
     await footer.start();

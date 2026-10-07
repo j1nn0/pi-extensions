@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { getCommandCodeToken } from "../auth.ts";
 import { clampPercent } from "../format.ts";
 import { fetchWithTimeout } from "./fetch.ts";
@@ -26,8 +26,16 @@ interface CommandCodeWhoamiResponse {
   org?: { id?: unknown } | null;
 }
 
-// Organization id per API key fingerprint; it does not change during a process.
+// Organization id is cached by a process-local keyed fingerprint of the API token.
 const orgIdCache = new Map<string, string | null>();
+
+// Ephemeral process-local key: the cache above is in-memory only, so each
+// fingerprint only needs to be stable within this process.
+const tokenFingerprintKey = randomBytes(32);
+
+function tokenFingerprint(token: string): string {
+  return createHmac("sha256", tokenFingerprintKey).update(token, "utf8").digest("hex");
+}
 
 function parseWindowLimit(limit: CommandCodeWindowLimit, label: string): RateWindow | undefined {
   const used = Number(limit.used);
@@ -68,7 +76,7 @@ function requestHeaders(token: string): Record<string, string> {
 }
 
 async function resolveOrgId(token: string): Promise<string | null> {
-  const fingerprint = createHash("sha256").update(token).digest("hex");
+  const fingerprint = tokenFingerprint(token);
   const cached = orgIdCache.get(fingerprint);
   if (cached !== undefined) return cached;
 
