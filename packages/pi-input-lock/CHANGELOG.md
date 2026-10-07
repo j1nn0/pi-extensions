@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] - 2026-10-07
+
+### Changed
+
+- Require Pi 1.0.0 or later.
+- Support Node.js 22.19.0 or later.
+
 ## [0.2.1-rc.1]
 
 ### Changed
