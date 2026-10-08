@@ -45,7 +45,7 @@ Packages have separate release workflows and tag namespaces:
 - `pi-input-lock-v<version>` releases `@j1nn0/pi-input-lock` through [`.github/workflows/release-pi-input-lock.yml`](.github/workflows/release-pi-input-lock.yml).
 - `pi-footer-v<version>` releases `@j1nn0/pi-footer` through [`.github/workflows/release-pi-footer.yml`](.github/workflows/release-pi-footer.yml).
 
-Both workflows publish through npm Trusted Publishing (GitHub Actions OIDC). See the [release guide](docs/releasing.md) for publisher setup and release steps.
+Both workflows publish through npm Trusted Publishing (GitHub Actions OIDC). See the [release guide](docs/release.md) for publisher setup and release steps.
 
 ## License
 

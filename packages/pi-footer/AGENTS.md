@@ -12,4 +12,4 @@
 
 ## Release
 
-- Releases run from `.github/workflows/release-pi-footer.yml` on a pushed `pi-footer-v<version>` tag via npm Trusted Publishing; never publish manually or add npm tokens. See `../../docs/releasing.md`.
+- Releases run from `.github/workflows/release-pi-footer.yml` on a pushed `pi-footer-v<version>` tag via npm Trusted Publishing; never publish manually or add npm tokens. See `../../docs/release.md`.

@@ -3,7 +3,7 @@ name: Release pi-footer
 # Pushing a `pi-footer-v<version>` tag releases that package version:
 # check -> npm publish (Trusted Publishing, OIDC) -> registry verification -> GitHub Release.
 # The GitHub Release is created only after npm serves the published version.
-# npm Trusted Publisher setup: see docs/releasing.md.
+# npm Trusted Publisher setup: see docs/release.md.
 on:
   push:
     tags:
