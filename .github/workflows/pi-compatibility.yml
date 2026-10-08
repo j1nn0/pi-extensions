@@ -19,6 +19,7 @@ jobs:
         package:
           - pi-input-lock
           - pi-footer
+          - pi-exit
         include:
           - package: pi-input-lock
             filter: '@j1nn0/pi-input-lock'
@@ -29,6 +30,12 @@ jobs:
           - package: pi-footer
             filter: '@j1nn0/pi-footer'
             path: packages/pi-footer
+            pi_ai_version: '1.0.0'
+            pi_coding_agent_version: '1.0.0'
+            pi_tui_version: '1.0.0'
+          - package: pi-exit
+            filter: '@j1nn0/pi-exit'
+            path: packages/pi-exit
             pi_ai_version: '1.0.0'
             pi_coding_agent_version: '1.0.0'
             pi_tui_version: '1.0.0'

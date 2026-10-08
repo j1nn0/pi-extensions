@@ -19,11 +19,14 @@ jobs:
         package:
           - pi-input-lock
           - pi-footer
+          - pi-exit
         include:
           - package: pi-input-lock
             path: packages/pi-input-lock
           - package: pi-footer
             path: packages/pi-footer
+          - package: pi-exit
+            path: packages/pi-exit
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v3
