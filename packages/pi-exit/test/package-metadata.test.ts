@@ -23,4 +23,12 @@ describe("package metadata", () => {
     expect(packageJson.keywords).toContain("pi-package");
     expect(packageJson.peerDependencies).toEqual({ "@earendil-works/pi-coding-agent": ">=1.0.0" });
   });
+
+  it("licenses the package under MIT for j1nn0 only", async () => {
+    const license = await readFile(new URL("../LICENSE", import.meta.url), "utf8");
+
+    expect(license).toContain("Copyright (c) 2026 j1nn0");
+    expect(license).not.toContain("Can Celik");
+    expect(license).toContain("Permission is hereby granted, free of charge, to any person obtaining a copy");
+  });
 });
