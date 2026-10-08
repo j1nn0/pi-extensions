@@ -1,6 +1,6 @@
 {
   "name": "@j1nn0/pi-exit",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.0",
   "description": "Guarded /exit command for Pi that confirms before interrupting a running agent",
   "keywords": [
     "pi-package",
@@ -44,7 +44,9 @@
     "access": "public"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

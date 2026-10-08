@@ -21,4 +21,4 @@ pi install npm:@j1nn0/pi-exit
 
 The default now confirms before interrupting a running agent. Use `--force` to restore unconditional exit behavior.
 
-Pi 1.0 ships `/quit`; this extension provides `/exit` as an alias for muscle memory.
+Pi 1.0 ships `/quit`; this extension provides a guarded `/exit` command for muscle memory.

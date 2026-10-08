@@ -2,6 +2,6 @@
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-08
+## [0.1.0-rc.0]
 
-- Initial release of the guarded `/exit` command.
+- Initial prerelease of the guarded `/exit` command with confirmation, `--force`, `--wait`, and `--help`.
