@@ -18,7 +18,7 @@ describe("package metadata", () => {
     const packageJson = JSON.parse(await readFile(packageJsonUrl, "utf8")) as PackageMetadata;
 
     expect(packageJson.name).toBe("@j1nn0/pi-exit");
-    expect(packageJson.version).toBe("0.1.0-rc.0");
+    expect(packageJson.version).toBe("0.1.0");
     expect(packageJson.pi.extensions).toEqual(["./index.ts"]);
     expect(packageJson.files).toEqual(["index.ts", "src/", "README.md", "CHANGELOG.md", "LICENSE"]);
     expect(packageJson.keywords).toContain("pi-package");

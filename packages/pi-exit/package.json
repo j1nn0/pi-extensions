@@ -1,6 +1,6 @@
 {
   "name": "@j1nn0/pi-exit",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.0",
   "description": "Guarded /exit command for Pi that confirms before interrupting a running agent",
   "keywords": [
     "pi-package",
