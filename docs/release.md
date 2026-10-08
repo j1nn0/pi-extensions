@@ -30,7 +30,7 @@ The workflow filename is the filename only, not the `.github/workflows/` path. C
 
 ### Bootstrapping a new package
 
-Staged publishing is the only way to create a package name without a token. Run this once, from an account that has publish access and 2FA enabled:
+Trusted Publishing cannot be configured for a package that does not exist yet, and npm cannot publish a package's first version through OIDC. Staged publishing creates the package name without a token. Run this once, from an account that has publish access and 2FA enabled:
 
 ```sh
 cd packages/<package>
@@ -43,13 +43,21 @@ npm trust github @j1nn0/<package> \
 
 `--tag` is required when the staged version is a prerelease: npm rejects a prerelease without it. Use the dist-tag the workflow publishes to, which is `next` for a prerelease and `latest` for a stable version.
 
-`npm stage publish` on a package that does not exist yet publishes a placeholder `0.0.0-stage` version. That placeholder is the only public version until the tag workflow publishes the real one, and it is what any dist-tag points at until then. Do not approve the staged version: the tag workflow publishes that same version through OIDC with provenance, and npm versions are immutable.
+`npm stage publish` on a package that does not exist yet publishes a placeholder `0.0.0-stage` version and sets `latest` to it. Do not approve the staged version: the tag workflow publishes that same version through OIDC with provenance, and npm versions are immutable.
 
 `--allow-publish` is required. Configurations created after 2026-09-03 allow staged publishing only, so without it the workflow's `npm publish` is rejected.
 
 A trusted publisher configuration must complete its first successful publish within 2 days, or it expires and can no longer be edited. Push the release tag promptly after configuring it.
 
 Staged publishing requires npm CLI 11.15.0 or later and Node.js 22.14.0 or later.
+
+### Dist-tags while a package is bootstrapping
+
+Creating a package through staged publishing puts `latest` on the `0.0.0-stage` placeholder. Publishing the first prerelease with `--tag next` can still leave `latest` pointing at that prerelease instead of at the placeholder; `@j1nn0/pi-exit` reached `latest = 0.1.0-rc.0` this way.
+
+Leave `latest` alone. Do not repoint it at the placeholder, which would make a tagless install resolve to a version with no package content. The stable release workflow publishes with `--tag latest`, so the first stable release moves `latest` off the prerelease on its own.
+
+`next` carries prereleases and `latest` is where stable releases land. A bootstrap can leave `latest` on a prerelease until the first stable release, and that state is expected rather than a fault to repair.
 
 ## Releasing a package
 
