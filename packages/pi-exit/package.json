@@ -1,0 +1,58 @@
+{
+  "name": "@j1nn0/pi-exit",
+  "version": "0.1.0",
+  "description": "Guarded /exit command for Pi that confirms before interrupting a running agent",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "exit",
+    "quit",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "author": "j1nn0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j1nn0/pi-extensions.git",
+    "directory": "packages/pi-exit"
+  },
+  "bugs": {
+    "url": "https://github.com/j1nn0/pi-extensions/issues"
+  },
+  "homepage": "https://github.com/j1nn0/pi-extensions/tree/main/packages/pi-exit#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pack:check": "pnpm pack --pack-destination /tmp"
+  }
+}
