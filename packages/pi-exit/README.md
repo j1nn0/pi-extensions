@@ -25,6 +25,6 @@ Pi 1.0 ships `/quit`; this extension provides a guarded `/exit` command for musc
 
 ## Migrating from `npm:pi-exit`
 
-Do not load both packages at the same time. If the original `npm:pi-exit` is still configured, Pi may namespace this package's command as `exit:1` instead of binding it to `/exit`, so `/exit` would keep running the old extension.
+Do not load both packages at the same time. Both register a command named `exit`, and Pi renames colliding extension commands, so with both loaded neither one answers `/exit`: they are listed as `exit:1` and `exit:2` instead.
 
 Remove the old `npm:pi-exit` package from your Pi configuration before installing `@j1nn0/pi-exit`.
