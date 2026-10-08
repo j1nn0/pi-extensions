@@ -6,6 +6,7 @@ The extensions are released independently from this monorepo. Each package has i
 | --- | --- | --- | --- | --- |
 | pi-input-lock | `@j1nn0/pi-input-lock` | `packages/pi-input-lock` | `release-pi-input-lock.yml` | `pi-input-lock-v<version>` |
 | pi-footer | `@j1nn0/pi-footer` | `packages/pi-footer` | `release-pi-footer.yml` | `pi-footer-v<version>` |
+| pi-exit | `@j1nn0/pi-exit` | `packages/pi-exit` | `release-pi-exit.yml` | `pi-exit-v<version>` |
 
 A release runs checks, uses `pnpm pack` to resolve workspace `catalog:` references in the packed manifest, then publishes that exact tarball to npm through GitHub Actions OIDC. The workflow verifies the registry package name, version, dist-tag, and integrity before creating the GitHub Release. The root monorepo is not an installable Pi extension; publish and install the individual npm packages.
 
@@ -17,11 +18,11 @@ Configure each npm package on npmjs.com before its first tagged release. Under t
 | --- | --- |
 | Organization or user | `j1nn0` |
 | Repository | `pi-extensions` |
-| Workflow filename | `release-pi-input-lock.yml` for pi-input-lock; `release-pi-footer.yml` for pi-footer |
+| Workflow filename | `release-pi-input-lock.yml` for pi-input-lock; `release-pi-footer.yml` for pi-footer; `release-pi-exit.yml` for pi-exit |
 | Environment name | leave empty |
 | Allowed actions | enable `npm publish` |
 
-The workflow filename is the filename only, not the `.github/workflows/` path. Configure the pi-input-lock publisher on `@j1nn0/pi-input-lock` and the pi-footer publisher on `@j1nn0/pi-footer`. No npm token is stored in the repository or its secrets; npm authenticates through OIDC and generates provenance. After the first successful release, npm's optional **Require two-factor authentication and disallow tokens** publishing setting can be enabled; Trusted Publishing continues to work.
+The workflow filename is the filename only, not the `.github/workflows/` path. Configure the pi-input-lock publisher on `@j1nn0/pi-input-lock`, the pi-footer publisher on `@j1nn0/pi-footer`, and the pi-exit publisher on `@j1nn0/pi-exit`. No npm token is stored in the repository or its secrets; npm authenticates through OIDC and generates provenance. After the first successful release, npm's optional **Require two-factor authentication and disallow tokens** publishing setting can be enabled; Trusted Publishing continues to work.
 
 ## Releasing a package
 
@@ -38,6 +39,13 @@ The workflow filename is the filename only, not the `.github/workflows/` path. C
    ```sh
    git tag pi-footer-v<version>
    git push origin pi-footer-v<version>
+   ```
+
+   Or, for pi-exit:
+
+   ```sh
+   git tag pi-exit-v<version>
+   git push origin pi-exit-v<version>
    ```
 
    Replace `<version>` with the package's version, such as `0.2.1` or `0.2.1-beta.1`. Tags must use plain SemVer with an optional prerelease; build metadata is rejected because npm drops it.
