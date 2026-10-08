@@ -34,14 +34,16 @@ Staged publishing is the only way to create a package name without a token. Run 
 
 ```sh
 cd packages/<package>
-npm stage publish
+npm stage publish --tag next
 npm trust github @j1nn0/<package> \
   --file release-<package>.yml \
   --repo j1nn0/pi-extensions \
   --allow-publish
 ```
 
-`npm stage publish` on a package that does not exist yet publishes a placeholder `0.0.0-stage` version. That placeholder is the only public version until the tag workflow publishes the real one, so a `latest` tag pointing at it is expected and is replaced when the first stable release publishes. Do not approve the staged version: the tag workflow publishes that same version through OIDC with provenance, and npm versions are immutable.
+`--tag` is required when the staged version is a prerelease: npm rejects a prerelease without it. Use the dist-tag the workflow publishes to, which is `next` for a prerelease and `latest` for a stable version.
+
+`npm stage publish` on a package that does not exist yet publishes a placeholder `0.0.0-stage` version. That placeholder is the only public version until the tag workflow publishes the real one, and it is what any dist-tag points at until then. Do not approve the staged version: the tag workflow publishes that same version through OIDC with provenance, and npm versions are immutable.
 
 `--allow-publish` is required. Configurations created after 2026-09-03 allow staged publishing only, so without it the workflow's `npm publish` is rejected.
 
