@@ -12,7 +12,11 @@ A release runs checks, uses `pnpm pack` to resolve workspace `catalog:` referenc
 
 ## One-time npm Trusted Publisher setup
 
-Configure each npm package on npmjs.com before its first tagged release. Under the package's **Settings → Trusted Publisher → GitHub Actions**, use:
+Trusted Publishing can only be configured for a package that already exists on the registry, and npm cannot publish a package's first version through OIDC. pi-input-lock and pi-footer are already published, so configure their publishers directly. A new package name needs the bootstrap below first.
+
+### Existing packages
+
+Under the package's **Settings → Trusted Publisher → GitHub Actions**, use:
 
 | Field | Value |
 | --- | --- |
@@ -23,6 +27,27 @@ Configure each npm package on npmjs.com before its first tagged release. Under t
 | Allowed actions | enable `npm publish` |
 
 The workflow filename is the filename only, not the `.github/workflows/` path. Configure the pi-input-lock publisher on `@j1nn0/pi-input-lock`, the pi-footer publisher on `@j1nn0/pi-footer`, and the pi-exit publisher on `@j1nn0/pi-exit`. No npm token is stored in the repository or its secrets; npm authenticates through OIDC and generates provenance. After the first successful release, npm's optional **Require two-factor authentication and disallow tokens** publishing setting can be enabled; Trusted Publishing continues to work.
+
+### Bootstrapping a new package
+
+Staged publishing is the only way to create a package name without a token. Run this once, from an account that has publish access and 2FA enabled:
+
+```sh
+cd packages/<package>
+npm stage publish
+npm trust github @j1nn0/<package> \
+  --file release-<package>.yml \
+  --repo j1nn0/pi-extensions \
+  --allow-publish
+```
+
+`npm stage publish` on a package that does not exist yet publishes a placeholder `0.0.0-stage` version. That placeholder is the only public version until the tag workflow publishes the real one, so a `latest` tag pointing at it is expected and is replaced when the first stable release publishes. Do not approve the staged version: the tag workflow publishes that same version through OIDC with provenance, and npm versions are immutable.
+
+`--allow-publish` is required. Configurations created after 2026-09-03 allow staged publishing only, so without it the workflow's `npm publish` is rejected.
+
+A trusted publisher configuration must complete its first successful publish within 2 days, or it expires and can no longer be edited. Push the release tag promptly after configuring it.
+
+Staged publishing requires npm CLI 11.15.0 or later and Node.js 22.14.0 or later.
 
 ## Releasing a package
 
