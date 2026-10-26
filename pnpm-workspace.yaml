@@ -9,6 +9,11 @@ catalog:
   typescript: "^7.0.0"
   vitest: "^4.1.12"
 
+overrides:
+  # @earendil-works/pi-coding-agent pins undici@8.10.2, so force a patched release for
+  # GHSA-f72v-6w45-q472, GHSA-4qv8-2p9j-2685, and GHSA-xjj6-f33q-929c.
+  "undici@<8.12.2": "8.12.3"
+
 allowBuilds:
   "@google/genai": true
   esbuild: false
