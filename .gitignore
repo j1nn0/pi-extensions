@@ -12,8 +12,9 @@ logs/
 .DS_Store
 *.swp
 
-# Pi project-local state
+# AI project-local state
 .pi/
+.commandcode/
 
 # Environment files and secrets
 .env
