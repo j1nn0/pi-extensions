@@ -1,0 +1,60 @@
+{
+  "name": "@j1nn0/pi-shortcuts",
+  "version": "0.1.0",
+  "description": "Shortcut storage foundation for Pi: validated, atomically saved reusable procedures",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "shortcut",
+    "shortcuts",
+    "snippet",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "author": "j1nn0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j1nn0/pi-extensions.git",
+    "directory": "packages/pi-shortcuts"
+  },
+  "bugs": {
+    "url": "https://github.com/j1nn0/pi-extensions/issues"
+  },
+  "homepage": "https://github.com/j1nn0/pi-extensions/tree/main/packages/pi-shortcuts#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "README.ja.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pack:check": "pnpm pack --pack-destination /tmp"
+  }
+}
