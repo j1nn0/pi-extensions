@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-16
+
 ### Added
 
 - Goal status segment on line 2, read from the `goal` extension status that
