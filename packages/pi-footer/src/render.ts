@@ -1,6 +1,7 @@
 import type { ContextUsage, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatDuration, formatResetClock, formatTokenCount } from "./format.ts";
+import { parseGoalStatus, type GoalState } from "./goal.ts";
 import type { CacheUsage, GitCache, RateWindow, UsageSnapshot } from "./types.ts";
 
 export const CONTEXT_BAR_WIDTH = 10;
@@ -27,6 +28,8 @@ export interface FooterRenderInput {
   cwd: string | undefined;
   /** Git state, or null when hidden or unavailable. */
   git: GitCache | null;
+  /** Raw `goal` extension status published by pi-goal, when enabled. */
+  goal: string | undefined;
   contextMode: string | undefined;
 }
 
@@ -157,7 +160,7 @@ export function renderFirstLine(input: FooterRenderInput): string {
   return truncateToWidth(modelOnly + tail, width);
 }
 
-// ============ Line 2: quota, duration, cwd, git, Context Mode ============
+// ============ Line 2: quota, duration, cwd, git, goal, Context Mode ============
 
 function usageColor(percent: number): ThemeColor {
   if (percent >= 92) return "error";
@@ -183,6 +186,47 @@ export function renderGit(git: GitCache | null, theme: Theme): string {
   return text;
 }
 
+const GOAL_ICON = "🎯";
+
+const GOAL_LABELS: Readonly<Record<GoalState, string>> = {
+  active: "goal",
+  waiting: "waiting",
+  paused: "paused",
+  blocked: "blocked",
+  usage_limited: "usage limit",
+  budget_limited: "budget limit",
+  complete: "complete",
+};
+
+function goalColor(state: GoalState): ThemeColor {
+  switch (state) {
+    case "active":
+    case "complete":
+      return "success";
+    case "waiting":
+    case "paused":
+      return "warning";
+    default:
+      return "error";
+  }
+}
+
+/** Goal segment variants from most to least detailed. */
+export function renderGoalVariants(status: string | undefined, theme: Theme): string[] {
+  const goal = parseGoalStatus(status);
+  if (!goal) return [];
+
+  const color = goalColor(goal.state);
+  const text = `${GOAL_ICON} ${GOAL_LABELS[goal.state]}`;
+  const label = theme.fg(color, text);
+  // Every pi-goal state but `waiting` and `complete` carries an `automatic …`
+  // suffix; only `active` shows its counter, where progress is the useful signal.
+  if (goal.state !== "active" || !goal.turns) return [label];
+
+  // Keep the counter while it fits, then fall back to the bare state.
+  return [theme.fg(color, `${text} ${goal.turns.used}/${goal.turns.limit}`), label];
+}
+
 export function renderSecondLine(input: FooterRenderInput): string {
   const { width, theme } = input;
   const sep = separator(theme);
@@ -190,28 +234,37 @@ export function renderSecondLine(input: FooterRenderInput): string {
   const duration = input.durationMs === undefined ? "" : theme.fg("muted", formatDuration(input.durationMs));
   const cwd = input.cwd ? theme.fg("dim", input.cwd) : "";
   const git = renderGit(input.git, theme);
+  const goals = renderGoalVariants(input.goal, theme);
+  const goal = goals[0] ?? "";
   const contextMode = input.contextMode ? theme.fg("dim", "ctx-mode") + " " + theme.fg("muted", input.contextMode) : "";
 
-  const build = (options: { windows: number; resets: boolean; duration: boolean; cwd: boolean; contextMode: boolean }) =>
+  const build = (options: { windows: number; resets: boolean; duration: boolean; cwd: boolean; goal: string; contextMode: boolean }) =>
     [
       ...windows.slice(0, options.windows).map((window) => renderUsageWindow(window, theme, options.resets)),
       options.duration ? duration : "",
       options.cwd ? cwd : "",
       git,
+      options.goal,
       options.contextMode ? contextMode : "",
     ]
       .filter(Boolean)
       .join(sep);
 
-  // Drop detail in priority order: Context Mode, cwd, duration, reset times, then quota windows from the last.
+  const full = { windows: windows.length, resets: true, duration: true, cwd: true, goal, contextMode: true };
+  // Drop detail in priority order: Context Mode, cwd, duration, reset times, then quota windows
+  // from the last. Git and Goal survive the longest; the Goal counter goes before they do.
   const candidates = [
-    build({ windows: windows.length, resets: true, duration: true, cwd: true, contextMode: true }),
-    build({ windows: windows.length, resets: true, duration: true, cwd: true, contextMode: false }),
-    build({ windows: windows.length, resets: true, duration: true, cwd: false, contextMode: false }),
-    build({ windows: windows.length, resets: true, duration: false, cwd: false, contextMode: false }),
+    build(full),
+    build({ ...full, contextMode: false }),
+    build({ ...full, contextMode: false, cwd: false }),
+    build({ ...full, contextMode: false, cwd: false, duration: false }),
   ];
   for (let count = windows.length; count >= 0; count--) {
-    candidates.push(build({ windows: count, resets: false, duration: false, cwd: false, contextMode: false }));
+    candidates.push(build({ windows: count, resets: false, duration: false, cwd: false, goal, contextMode: false }));
+  }
+  const shortestGoal = goals[goals.length - 1] ?? "";
+  if (shortestGoal !== goal) {
+    candidates.push(build({ windows: 0, resets: false, duration: false, cwd: false, goal: shortestGoal, contextMode: false }));
   }
   return fitVariants(width, candidates);
 }

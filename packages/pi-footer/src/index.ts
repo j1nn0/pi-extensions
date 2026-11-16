@@ -29,7 +29,7 @@ function shortenHome(path: string): string {
 }
 
 export default function (pi: ExtensionAPI): void {
-  const { showCwd, showBranch, showProvider, showContextMode } = readFooterVisibility();
+  const { showCwd, showBranch, showProvider, showContextMode, showGoal } = readFooterVisibility();
 
   // Track usage state for rendering
   let latestUsage: UsageSnapshot | null = null;
@@ -155,6 +155,9 @@ export default function (pi: ExtensionAPI): void {
             durationMs: startedAt === undefined ? undefined : Date.now() - startedAt,
             cwd: showCwd ? shortenHome(ctx.cwd) : undefined,
             git: showBranch ? getGitCache() : null,
+            // Read per render: Pi re-renders the footer whenever an extension calls
+            // ctx.ui.setStatus(), so pi-goal's state needs no polling here.
+            goal: showGoal ? footerData.getExtensionStatuses().get("goal") : undefined,
             contextMode: showContextMode ? contextMode.amount : undefined,
           });
         },

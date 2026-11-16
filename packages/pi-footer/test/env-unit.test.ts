@@ -35,12 +35,13 @@ describe("readFlag", () => {
 });
 
 describe("readFooterVisibility", () => {
-  it("hides cwd by default and shows branch and Context Mode", () => {
+  it("hides cwd by default and shows branch, Context Mode, and Goal", () => {
     expect(readFooterVisibility({})).toEqual({
       showCwd: false,
       showBranch: true,
       showProvider: false,
       showContextMode: true,
+      showGoal: true,
     });
   });
 
@@ -51,7 +52,8 @@ describe("readFooterVisibility", () => {
         PI_MINIMAL_FOOTER_SHOW_BRANCH: "0",
         PI_FOOTER_SHOW_PROVIDER: "true",
         PI_FOOTER_SHOW_CONTEXT_MODE: "off",
+        PI_FOOTER_SHOW_GOAL: "0",
       })
-    ).toEqual({ showCwd: true, showBranch: false, showProvider: true, showContextMode: false });
+    ).toEqual({ showCwd: true, showBranch: false, showProvider: true, showContextMode: false, showGoal: false });
   });
 });

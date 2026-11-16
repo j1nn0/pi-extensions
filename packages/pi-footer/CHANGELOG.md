@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Goal status segment on line 2, read from the `goal` extension status that
+  [`@narumitw/pi-goal`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
+  publishes through `ctx.ui.setStatus()`:
+  - `🎯 goal 12/100` (active, with pi-goal's automatic continuation counter),
+    `🎯 waiting` and `🎯 paused` in warning colour, `🎯 blocked`,
+    `🎯 usage limit` and `🎯 budget limit` in error colour, and `🎯 complete` in
+    success colour.
+  - Without a counter (unlimited limit) the segment is `🎯 goal`; an
+    unrecognized status is omitted. No Goal state is cached, polled, or timed.
+- `PI_FOOTER_SHOW_GOAL` (default `1`) to turn the segment off.
+- Goal status survives line 2 shrinking: Context Mode, cwd, duration, reset
+  times, quota windows, and finally the turn counter are dropped before it.
+
 ## [0.1.2] - 2026-10-07
 
 ### Changed

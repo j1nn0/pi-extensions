@@ -2,8 +2,9 @@
 
 A Pi extension that replaces Pi's default footer with a compact two-line status
 display showing model and thinking state, context usage, prompt-cache usage,
-subscription quota windows with reset times, session duration, Git state, and
-the optional Context Mode "this chat" amount.
+subscription quota windows with reset times, session duration, Git state, the
+optional [pi-goal](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
+state, and the optional Context Mode "this chat" amount.
 
 This project is a standalone fork of [`pi-minimal-footer`](https://github.com/ogulcancelik/pi-extensions/tree/main/packages/pi-minimal-footer)
 by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the
@@ -11,7 +12,7 @@ by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the
 
 ```text
 deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41% · 161.0k/384.0k │ cache R424.0k/W2.1k
-5h 22% ↻ 15:03 │ 7d 66% ↻ 10/08 10:00 │ 6h29m │ main * ↑2 │ ctx-mode 426KB
+5h 22% ↻ 15:03 │ 7d 66% ↻ 10/08 10:00 │ 6h29m │ main * ↑2 │ 🎯 goal 12/100 │ ctx-mode 426KB
 ```
 
 ## Requirements
@@ -19,6 +20,7 @@ deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41
 - Pi `>= 1.0.0` (`@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are peer dependencies provided by Pi)
 - Node.js `>= 22.19.0` (Pi 1.0's own requirement)
 - Optional: [Context Mode](https://github.com/mksglu/context-mode) for the `ctx-mode` segment
+- Optional: [`@narumitw/pi-goal`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal) for the `🎯` segment
 
 ## Installation
 
@@ -62,10 +64,10 @@ pi -e ./index.ts
 
 Token counts use one decimal: `950`, `424.5k`, `1.0M`.
 
-### Line 2 — quota, duration, Git, Context Mode
+### Line 2 — quota, duration, Git, Goal, Context Mode
 
 ```text
-<window> <used%> ↻ <reset> │ ... │ <duration> │ [cwd] │ <branch> │ ctx-mode <amount>
+<window> <used%> ↻ <reset> │ ... │ <duration> │ [cwd] │ <branch> │ 🎯 <goal> │ ctx-mode <amount>
 ```
 
 - **Quota windows** — the subscription windows of the current model's provider
@@ -80,6 +82,8 @@ Token counts use one decimal: `950`, `424.5k`, `1.0M`.
 - **cwd** — optional, off by default (see Configuration).
 - **Git** — branch name, ` *` when the working tree has changes, `↑N` ahead and
   `↓N` behind its upstream. A detached HEAD shows its short commit id.
+- **Goal** — `🎯` followed by the state [pi-goal](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
+  publishes through Pi's extension status API (see [Goal status](#goal-status)).
 - **Context Mode** — `ctx-mode <amount>`: Context Mode's "this chat" amount for
   the current Pi session. Lifetime statistics and other Context Mode details are
   not shown.
@@ -92,18 +96,23 @@ The footer keeps two lines and drops detail by priority as the width shrinks:
   then the bar. The model name is shortened before the context percentage is
   dropped.
 - Line 2: Context Mode, then cwd, then duration, then reset times, then quota
-  windows from the last one. The branch stays longest.
+  windows from the last one, then the Goal turn counter. The branch and the Goal
+  state stay longest.
 
 Every line is truncated to the terminal width with ANSI-aware Pi TUI helpers.
 
 ```text
 # 80 columns
 gpt-6-luna · high · think ON │ ctx ████░░░░░░ 41% · 161.0k/384.0k
-5h 71% ↻ 15:00 │ 7d 14% ↻ 10/06 12:00 │ 6h29m │ main * ↑2 │ ctx-mode 426KB
+5h 71% ↻ 15:00 │ 7d 14% ↻ 10/06 12:00 │ 6h29m │ main * ↑2 │ 🎯 goal 12/100
 
 # 40 columns
 gpt-6-luna · high │ ctx ████░░░░░░ 41%
-5h 71% │ 7d 14% │ main * ↑2
+5h 71% │ main * ↑2 │ 🎯 goal 12/100
+
+# 20 columns
+gpt-6-luna │ ctx 41%
+main * ↑2 │ 🎯 goal
 ```
 
 ## Supported providers
@@ -146,6 +155,9 @@ other segment.
   reports a branch change, and at the end of every turn.
 - Context Mode is queried in the background at session start and at the end of
   every turn; the last value is kept if a later query fails.
+- Goal status is read from Pi's extension status map on every render; Pi
+  re-renders the footer when an extension publishes a status, so no timer or
+  polling is involved.
 - Rendering itself performs no network requests, process launches, or file
   reads.
 
@@ -162,6 +174,38 @@ If Context Mode is not installed, fails, times out, has no data for the session
 yet, or prints something else, the segment is omitted without any warning. Set
 `PI_FOOTER_SHOW_CONTEXT_MODE=0` to never run it.
 
+## Goal status
+
+[pi-goal](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
+is optional and not a dependency. When it is installed, it publishes its state
+with `ctx.ui.setStatus("goal", …)`; the footer reads that value with Pi's
+public `getExtensionStatuses()` and shows it on line 2. Without pi-goal the
+segment is simply absent and nothing else changes.
+
+The state strings are the ones pi-goal's `formatStatus` produces:
+
+| Goal state       | Display           | Colour  |
+| ---------------- | ----------------- | ------- |
+| `active`         | `🎯 goal 12/100`  | success |
+| `waiting`        | `🎯 waiting`      | warning |
+| `paused`         | `🎯 paused`       | warning |
+| `blocked`        | `🎯 blocked`      | error   |
+| `usage_limited`  | `🎯 usage limit`  | error   |
+| `budget_limited` | `🎯 budget limit` | error   |
+| `complete`       | `🎯 complete`     | success |
+
+`12/100` is pi-goal's automatic continuation counter
+(`automaticModelTurns`/`automaticTurns`). With an unlimited automatic limit, or
+whenever the counter is not reported, the segment is just `🎯 goal`. The footer
+recognizes `waiting` and `complete` verbatim and the other states only when they
+carry pi-goal's ` automatic …` suffix; anything else is omitted rather than
+guessed.
+
+The footer is passive here: it keeps no Goal state of its own, so a new or
+resumed session shows whatever pi-goal publishes for that session. pi-goal
+clears its own status after a completion, so `🎯 complete` disappears without a
+footer-side timer.
+
 ## Configuration
 
 Optional environment variables, read when the extension is loaded. Each
@@ -174,6 +218,7 @@ from the original package is used when the new one is unset, empty, or invalid.
 | `PI_FOOTER_SHOW_BRANCH`        | `PI_MINIMAL_FOOTER_SHOW_BRANCH`   | Show Git branch, dirty marker, and ahead/behind   | `1`     |
 | `PI_FOOTER_SHOW_PROVIDER`      | `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show `provider/model-id` instead of the short ID  | `0`     |
 | `PI_FOOTER_SHOW_CONTEXT_MODE`  | —                                 | Query Context Mode and show `ctx-mode`            | `1`     |
+| `PI_FOOTER_SHOW_GOAL`          | —                                 | Show the pi-goal state on line 2                  | `1`     |
 
 True values: `1`, `true`, `yes`, `on`. False values: `0`, `false`, `no`, `off`.
 Values are case-insensitive and trimmed.
@@ -200,6 +245,13 @@ For security concerns and vulnerability reporting, see the [repository security 
 - **Context Mode coupling** — the `ctx-mode` segment relies on Context Mode's
   Pi adapter storing sessions under `~/.pi/context-mode/sessions` with session
   ids derived from the Pi session file path, as of Context Mode 1.0.169.
+- **Goal status coupling** — the `🎯` segment parses the text pi-goal publishes
+  through `ctx.ui.setStatus("goal", …)`, as of `@narumitw/pi-goal` 0.55.x. It
+  accepts `waiting` and `complete` verbatim and the other states only when they
+  carry pi-goal's ` automatic …` suffix. Anything else — including a
+  status another extension published under the same `goal` key, or a future
+  pi-goal wording that no longer matches — is omitted instead of guessed, and
+  the rest of the footer keeps working.
 - **Missing credentials or failed requests** — the quota windows are simply not
   shown; no error is displayed.
 - The footer replaces Pi's default footer entirely.

@@ -3,6 +3,7 @@ export interface FooterVisibility {
   showBranch: boolean;
   showProvider: boolean;
   showContextMode: boolean;
+  showGoal: boolean;
 }
 
 export function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
@@ -30,5 +31,6 @@ export function readFooterVisibility(env: NodeJS.ProcessEnv = process.env): Foot
     showBranch: readFlag("SHOW_BRANCH", true, env),
     showProvider: readFlag("SHOW_PROVIDER", false, env),
     showContextMode: readFlag("SHOW_CONTEXT_MODE", true, env),
+    showGoal: readFlag("SHOW_GOAL", true, env),
   };
 }

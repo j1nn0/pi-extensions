@@ -299,14 +299,24 @@ export function createFooterHarness(
     branchChangeCallback = callback;
     return unsubscribe;
   });
+  // Mirrors Pi's FooterDataProvider: `ctx.ui.setStatus()` writes here and Pi
+  // re-renders the footer, so tests read the same live map the footer does.
+  const extensionStatuses = new Map<string, string>();
+  const getExtensionStatuses = vi.fn(() => extensionStatuses as ReadonlyMap<string, string>);
+  const footerData = { onBranchChange, getExtensionStatuses };
 
   const branch = options.branch ?? [messageEntry("assistant-1", null, assistantMessage())];
-  const state: { model: HarnessModel | null; thinkingLevel: string | undefined; context: ContextUsage | undefined } = {
+  const state: {
+    model: HarnessModel | null;
+    thinkingLevel: string | undefined;
+    context: ContextUsage | undefined;
+    sessionFile: string | undefined;
+  } = {
     model: options.model === undefined ? { provider: "openai-codex", id: "gpt-6-luna", reasoning: true } : options.model,
     thinkingLevel: "thinkingLevel" in options ? options.thinkingLevel : "high",
     context: "context" in options ? options.context : { tokens: 161_000, contextWindow: 384_000, percent: 41.9 },
+    sessionFile: "sessionFile" in options ? options.sessionFile : "/sessions/session-1.jsonl",
   };
-  const sessionFile = "sessionFile" in options ? options.sessionFile : "/sessions/session-1.jsonl";
   const ctx = {
     hasUI: options.hasUI ?? true,
     cwd: options.cwd ?? join(process.env.HOME ?? "", "work"),
@@ -327,7 +337,7 @@ export function createFooterHarness(
         cwd: process.cwd(),
         timestamp: new Date(options.sessionStartedAt ?? FROZEN_NOW - (6 * HOUR + 29 * 60 * 1000)).toISOString(),
       }),
-      getSessionFile: () => sessionFile,
+      getSessionFile: () => state.sessionFile,
     },
     ui: { setFooter },
   };
@@ -341,9 +351,20 @@ export function createFooterHarness(
     setFooter,
     onBranchChange,
     unsubscribe,
-    async start() {
+    getExtensionStatuses,
+    /** Mimics `ctx.ui.setStatus(key, text)`; `undefined` clears the key. */
+    setExtensionStatus(key: string, text: string | undefined) {
+      if (text === undefined) extensionStatuses.delete(key);
+      else extensionStatuses.set(key, text);
+    },
+    /** Mimics Pi's `resetExtensionUI()` on a session switch: statuses are dropped. */
+    clearExtensionStatuses() {
+      extensionStatuses.clear();
+    },
+    async start(sessionFile?: string) {
+      if (sessionFile !== undefined) state.sessionFile = sessionFile;
       await handlers.get("session_start")?.({ type: "session_start" }, ctx);
-      if (footerFactory) component = footerFactory(tui, theme, { onBranchChange }) as typeof component;
+      if (footerFactory) component = footerFactory(tui, theme, footerData) as typeof component;
     },
     render(width: number): string[] {
       if (!component) throw new Error("Footer component was not initialized");

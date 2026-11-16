@@ -27,6 +27,7 @@ function input(overrides: Partial<FooterRenderInput> = {}): FooterRenderInput {
     durationMs: (6 * 60 + 29) * 60_000,
     cwd: undefined,
     git: { branch: "main", dirty: true, ahead: 2, behind: 0 },
+    goal: undefined,
     contextMode: "426KB",
     ...overrides,
   };
