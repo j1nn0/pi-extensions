@@ -120,18 +120,41 @@ export function contextModeProjectKey(cwd: string): string | undefined {
   return createHash("sha256").update(root).digest("hex").slice(0, PROJECT_KEY_LENGTH);
 }
 
-/** Root of Context Mode's data directory: `$CONTEXT_MODE_DATA_DIR` or `~/.context-mode`. */
-function dataRoot(env: NodeJS.ProcessEnv): string | undefined {
+function present(value: string | undefined): string | undefined {
+  return value === undefined || value === "" ? undefined : value;
+}
+
+/**
+ * Context Mode's home directory (`homeDirOf`): `USERPROFILE`, then
+ * `HOMEDRIVE`+`HOMEPATH`, then `HOME` on Windows; `HOME`, then `USERPROFILE`
+ * elsewhere. Empty values count as unset.
+ */
+function homeDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string | undefined {
+  if (platform !== "win32") return present(env.HOME) ?? present(env.USERPROFILE);
+  const profile = present(env.USERPROFILE);
+  if (profile !== undefined) return profile;
+  const drive = present(env.HOMEDRIVE);
+  const homePath = present(env.HOMEPATH);
+  if (drive !== undefined && homePath !== undefined) return drive + homePath;
+  return present(env.HOME);
+}
+
+/** Root of Context Mode's data directory: `$CONTEXT_MODE_DATA_DIR` or `<home>/.context-mode`. */
+function dataRoot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string | undefined {
   const override = env[DATA_DIR_ENV];
   if (override) return resolve(override);
-  const home = env.HOME || env.USERPROFILE;
-  return home ? join(home, DATA_ROOT_NAME) : undefined;
+  const home = homeDir(env, platform);
+  return home === undefined ? undefined : join(home, DATA_ROOT_NAME);
 }
 
 /** Absolute path of the Context Mode database for a Pi working directory. */
-export function contextModeDatabasePath(cwd: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function contextModeDatabasePath(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): string | undefined {
   const key = contextModeProjectKey(cwd);
-  const root = dataRoot(env);
+  const root = dataRoot(env, platform);
   if (key === undefined || root === undefined) return undefined;
   return join(root, PROJECTS_DIR_NAME, key, DB_FILE_NAME);
 }
@@ -181,13 +204,15 @@ export type ContextModeReader = (input: ContextModeReadInput) => Promise<string 
 
 /**
  * Cached Context Mode amount for one Pi session. Refreshes run in the
- * background, never overlap, and keep the last value when a refresh fails.
+ * background, never overlap, keep the last value when a refresh fails, and
+ * coalesce a request made during a read into one follow-up read.
  */
 export class ContextModeTracker {
   private value: string | undefined;
   private sessionId: string | undefined;
   private cwd: string | undefined;
   private inFlight = false;
+  private demand = false;
   private readonly read: ContextModeReader;
   private readonly onChange: () => void;
 
@@ -212,9 +237,17 @@ export class ContextModeTracker {
   }
 
   refresh(): void {
+    // A refresh requested while a read is in flight is served by exactly one
+    // chained re-read when that read settles, so reads never overlap and a
+    // session switch mid-read is not lost.
+    if (this.inFlight) {
+      this.demand = true;
+      return;
+    }
+
     const sessionId = this.sessionId;
     const cwd = this.cwd;
-    if (!sessionId || !cwd || this.inFlight) return;
+    if (!sessionId || !cwd) return;
     this.inFlight = true;
 
     this.read({ sessionId, cwd })
@@ -227,6 +260,10 @@ export class ContextModeTracker {
       .catch(() => {})
       .finally(() => {
         this.inFlight = false;
+        if (!this.demand) return;
+        // One follow-up per settle, so the chain ends here unless a caller asks again.
+        this.demand = false;
+        this.refresh();
       });
   }
 }

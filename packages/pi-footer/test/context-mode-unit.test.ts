@@ -189,6 +189,34 @@ describe("contextModeDatabasePath", () => {
     expect(contextModeDatabasePath(project, { CONTEXT_MODE_DATA_DIR: "" })).toBeUndefined();
     expect(contextModeDatabasePath(project, {})).toBeUndefined();
   });
+
+  // Context Mode's own `homeDirOf`: empty values count as unset.
+  it.each([
+    ["win32 prefers USERPROFILE", "win32", { USERPROFILE: "C:\\Users\\a", HOMEDRIVE: "C:", HOMEPATH: "\\Users\\d", HOME: "C:\\Users\\h" }, "C:\\Users\\a"],
+    ["win32 falls back to HOMEDRIVE+HOMEPATH", "win32", { USERPROFILE: "", HOMEDRIVE: "C:", HOMEPATH: "\\Users\\d", HOME: "C:\\Users\\h" }, "C:\\Users\\d"],
+    ["win32 falls back to HOME", "win32", { HOMEDRIVE: "C:", HOMEPATH: "", HOME: "C:\\Users\\h" }, "C:\\Users\\h"],
+    ["win32 without a usable home", "win32", { USERPROFILE: "", HOMEDRIVE: "", HOMEPATH: "", HOME: "" }, undefined],
+    ["posix prefers HOME", "darwin", { HOME: "/home/home", USERPROFILE: "/home/profile" }, "/home/home"],
+    ["posix falls back to USERPROFILE", "linux", { HOME: "", USERPROFILE: "/home/profile" }, "/home/profile"],
+    ["posix without a usable home", "linux", { HOME: "", USERPROFILE: "" }, undefined],
+  ] as [string, NodeJS.Platform, NodeJS.ProcessEnv, string | undefined][])(
+    "resolves the data root when %s",
+    (_name, platform, env, home) => {
+      const expected = home === undefined ? undefined : join(home, ".context-mode", "projects", keyOf(project), "context.db");
+      expect(contextModeDatabasePath(project, env, platform)).toBe(expected);
+    }
+  );
+
+  it("prefers CONTEXT_MODE_DATA_DIR over every home variable on both platforms", () => {
+    const expected = join("/custom", "projects", keyOf(project), "context.db");
+    const withHome = { HOME: "C:\\Users\\h", USERPROFILE: "C:\\Users\\a" };
+    const homeRoot = join("C:\\Users\\h", ".context-mode", "projects", keyOf(project), "context.db");
+    for (const platform of ["win32", "linux"] as NodeJS.Platform[]) {
+      expect(contextModeDatabasePath(project, { ...withHome, CONTEXT_MODE_DATA_DIR: "/custom" }, platform)).toBe(expected);
+      // An empty override counts as unset, so the HOME fallback applies.
+      expect(contextModeDatabasePath(project, { HOME: withHome.HOME, CONTEXT_MODE_DATA_DIR: "" }, platform)).toBe(homeRoot);
+    }
+  });
 });
 
 describe("readContextModeBytes", () => {
@@ -347,6 +375,51 @@ describe("ContextModeTracker", () => {
     calls[0]!.resolve("426.0 KB");
     await flush();
     expect(tracker.amount).toBeUndefined();
+  });
+
+  it("re-reads once for a session that switched while a read was in flight", async () => {
+    const { read, calls } = deferredReader();
+    const onChange = vi.fn();
+    const tracker = new ContextModeTracker(read, onChange);
+    tracker.setSession(SESSION, project);
+    tracker.refresh();
+    expect(calls).toHaveLength(1);
+
+    tracker.setSession(OTHER_SESSION, project);
+    tracker.refresh();
+    // No second concurrent read; the request is remembered instead.
+    expect(calls).toHaveLength(1);
+
+    calls[0]!.resolve("426.0 KB");
+    await flush();
+    // The first session's result is stale and must not be shown.
+    expect(tracker.amount).toBeUndefined();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.input).toEqual({ sessionId: OTHER_SESSION, cwd: project });
+
+    calls[1]!.resolve("488.3 KB");
+    await flush();
+    expect(tracker.amount).toBe("488.3 KB");
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // The chain ends after one follow-up.
+    expect(calls).toHaveLength(2);
+  });
+
+  it("ends the chain when the follow-up read fails", async () => {
+    const { read, calls } = deferredReader();
+    const tracker = new ContextModeTracker(read);
+    tracker.setSession(SESSION, project);
+    tracker.refresh();
+    tracker.setSession(OTHER_SESSION, project);
+    tracker.refresh();
+
+    calls[0]!.resolve("426.0 KB");
+    await flush();
+    calls[1]!.resolve(undefined);
+    await flush();
+
+    expect(tracker.amount).toBeUndefined();
+    expect(calls).toHaveLength(2);
   });
 
   it("survives a reader that rejects", async () => {

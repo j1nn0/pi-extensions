@@ -180,17 +180,21 @@ same local SQLite database that Context Mode's own `ctx_stats` tool reads:
   `SUM(sandbox_bytes)` over the session's rows with a tool, excluding cost rows
   and `ctx_stats` itself, using Context Mode's own `CALLS` predicate. The Pi
   session id is the UUID Pi assigns, which Context Mode stores verbatim.
-- **How** — one read-only connection (500 ms lock timeout), one aggregate
-  query, closed immediately. Nothing is created, migrated, or written: the
-  connection is read-only, and a missing database file fails to open instead of
-  being created. The read runs at session start, when Pi re-registers the footer
-  for a resumed, new, or forked session, and at the end of every turn, in the
-  background, never inside `render()`.
+- **How** — one read-only connection (lock wait of about 500 ms), one
+  aggregate query, closed immediately. Nothing is created, migrated, or written:
+  the connection is read-only, and a missing database file fails to open instead
+  of being created. The read is synchronous, not asynchronous I/O: it runs at
+  session start (including resume, new, and fork, where Pi re-registers the
+  footer) and at `turn_end`, never inside `render()`. It normally completes in
+  milliseconds, but while another process holds a lock it can block Pi's event
+  loop for about 500 ms in the worst case.
 
 If Context Mode is not installed, has no database for this project, has no calls
 for this session yet, or the database cannot be opened or read, the segment is
 omitted without any warning and the rest of the footer is unaffected. A failed
-read keeps the previous value; switching sessions discards it. Set
+read keeps the previous value; switching sessions discards it. A database left
+behind by a previous Context Mode install is still read, so its statistics keep
+showing even when Context Mode is currently uninstalled. Set
 `PI_FOOTER_SHOW_CONTEXT_MODE=0` to never read the database.
 
 Context Mode 1.x stores its state elsewhere and has no `projects/<key>/context.db`,
@@ -272,8 +276,10 @@ For security concerns and vulnerability reporting, see the [repository security 
   internals rather than an interface; a future release that moves the database
   or renames a column hides the segment instead of showing a wrong number.
 - **Context Mode cost** — the read is synchronous inside the refresh, so a turn
-  boundary waits a few milliseconds for one indexed aggregate query; nothing is
-  read during rendering and no timer polls the database.
+  boundary normally waits a few milliseconds for one indexed aggregate query and
+  can block Pi's event loop for about 500 ms when another
+  process holds the database; nothing is read during rendering and no timer
+  polls the database.
 - **Context Mode on Node 22** — `node:sqlite` is loaded the first time a Context
   Mode database is read. Node 22 prints its one-time
   `ExperimentalWarning: SQLite is an experimental feature` on stderr when that

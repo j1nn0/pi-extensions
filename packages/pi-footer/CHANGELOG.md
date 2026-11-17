@@ -14,10 +14,15 @@
   - Shows this session's produced bytes — `SUM(sandbox_bytes)` over the rows
     Context Mode counts as calls — formatted like Context Mode does
     (`ctx-mode 426.0 KB`) instead of the removed `<number> this chat` text.
-  - One read-only connection with a 500 ms lock timeout, one aggregate query,
-    no writes, no CLI launch, no polling, and no `render()` I/O. Session start
-    (including resume, new, and fork) and `turn_end` refresh in the background;
-    a failed read keeps the last value and a session switch discards it.
+  - One read-only connection with a lock wait of about 500 ms, one aggregate
+    query, no writes, no CLI launch, no polling, and no `render()` I/O. The read
+    is synchronous: it runs at session start (including resume, new, and fork)
+    and at `turn_end`, normally completes in milliseconds, and can block Pi's
+    event loop for about that long while waiting on a lock. A failed read keeps
+    the last value, a session switch discards it, and a switch during an
+    in-flight read triggers exactly one follow-up read instead of being lost.
+  - A database left behind by a previous Context Mode install is still read, so
+    the segment keeps showing statistics while Context Mode is uninstalled.
   - Context Mode 1.x is no longer supported; the segment stays hidden there.
 
 ## [0.1.3] - 2026-11-16
