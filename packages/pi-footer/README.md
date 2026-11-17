@@ -180,7 +180,7 @@ same local SQLite database that Context Mode's own `ctx_stats` tool reads:
   `SUM(sandbox_bytes)` over the session's rows with a tool, excluding cost rows
   and `ctx_stats` itself, using Context Mode's own `CALLS` predicate. The Pi
   session id is the UUID Pi assigns, which Context Mode stores verbatim.
-- **How** — one read-only connection (5 second lock timeout), one aggregate
+- **How** — one read-only connection (500 ms lock timeout), one aggregate
   query, closed immediately. Nothing is created, migrated, or written: the
   connection is read-only, and a missing database file fails to open instead of
   being created. The read runs at session start, when Pi re-registers the footer
