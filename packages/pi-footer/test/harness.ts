@@ -275,6 +275,7 @@ export function createFooterHarness(
     branch?: SessionEntry[];
     sessionStartedAt?: number;
     sessionFile?: string | undefined;
+    sessionId?: string | undefined;
     hasUI?: boolean;
     cwd?: string;
   } = {}
@@ -311,11 +312,13 @@ export function createFooterHarness(
     thinkingLevel: string | undefined;
     context: ContextUsage | undefined;
     sessionFile: string | undefined;
+    sessionId: string | undefined;
   } = {
     model: options.model === undefined ? { provider: "openai-codex", id: "gpt-6-luna", reasoning: true } : options.model,
     thinkingLevel: "thinkingLevel" in options ? options.thinkingLevel : "high",
     context: "context" in options ? options.context : { tokens: 161_000, contextWindow: 384_000, percent: 41.9 },
     sessionFile: "sessionFile" in options ? options.sessionFile : "/sessions/session-1.jsonl",
+    sessionId: "sessionId" in options ? options.sessionId : "session-1",
   };
   const ctx = {
     hasUI: options.hasUI ?? true,
@@ -338,6 +341,7 @@ export function createFooterHarness(
         timestamp: new Date(options.sessionStartedAt ?? FROZEN_NOW - (6 * HOUR + 29 * 60 * 1000)).toISOString(),
       }),
       getSessionFile: () => state.sessionFile,
+      getSessionId: () => state.sessionId,
     },
     ui: { setFooter },
   };

@@ -4,7 +4,7 @@ A Pi extension that replaces Pi's default footer with a compact two-line status
 display showing model and thinking state, context usage, prompt-cache usage,
 subscription quota windows with reset times, session duration, Git state, the
 optional [pi-goal](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
-state, and the optional Context Mode "this chat" amount.
+state, and the optional Context Mode produced-bytes amount.
 
 This project is a standalone fork of [`pi-minimal-footer`](https://github.com/ogulcancelik/pi-extensions/tree/main/packages/pi-minimal-footer)
 by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the
@@ -12,14 +12,14 @@ by Can Celik, originally published as `@ogulcancelik/pi-minimal-footer` in the
 
 ```text
 deepseek-v4.1-flash · max · think ON │ ctx ████░░░░░░ 41% · 161.0k/384.0k │ cache R424.0k/W2.1k
-5h 22% ↻ 15:03 │ 7d 66% ↻ 10/08 10:00 │ 6h29m │ main * ↑2 │ 🎯 goal 12/100 │ ctx-mode 426KB
+5h 22% ↻ 15:03 │ 7d 66% ↻ 10/08 10:00 │ 6h29m │ main * ↑2 │ 🎯 goal 12/100 │ ctx-mode 426.0 KB
 ```
 
 ## Requirements
 
 - Pi `>= 1.0.0` (`@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are peer dependencies provided by Pi)
 - Node.js `>= 22.19.0` (Pi 1.0's own requirement)
-- Optional: [Context Mode](https://github.com/mksglu/context-mode) for the `ctx-mode` segment
+- Optional: [Context Mode](https://github.com/mksglu/context-mode) 2.x for the `ctx-mode` segment
 - Optional: [`@narumitw/pi-goal`](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal) for the `🎯` segment
 
 ## Installation
@@ -84,8 +84,10 @@ Token counts use one decimal: `950`, `424.5k`, `1.0M`.
   `↓N` behind its upstream. A detached HEAD shows its short commit id.
 - **Goal** — `🎯` followed by the state [pi-goal](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-goal)
   publishes through Pi's extension status API (see [Goal status](#goal-status)).
-- **Context Mode** — `ctx-mode <amount>`: Context Mode's "this chat" amount for
-  the current Pi session. Lifetime statistics and other Context Mode details are
+- **Context Mode** — `ctx-mode <amount>`: how many bytes Context Mode's tools
+  produced in the current Pi session — the "made" column of `ctx_stats`, not the
+  bytes that reached the chat. It is formatted the way Context Mode formats
+  bytes (`426.0 KB`, `1.2 MB`); lifetime, per-tool, and percentage details are
   not shown.
 
 ### Narrow terminals
@@ -153,26 +155,46 @@ other segment.
 - Git state is read with `git status --porcelain=v2 --branch` (1 second
   timeout) in the directory Pi was started from, at session start, when Pi
   reports a branch change, and at the end of every turn.
-- Context Mode is queried in the background at session start and at the end of
-  every turn; the last value is kept if a later query fails.
+- Context Mode is read from its local database in the background at session
+  start and at the end of every turn; the last value is kept if a later read
+  fails.
 - Goal status is read from Pi's extension status map on every render; Pi
   re-renders the footer when an extension publishes a status, so no timer or
   polling is involved.
 - Rendering itself performs no network requests, process launches, or file
-  reads.
+  reads. The Context Mode segment is read ahead of the render and only its
+  cached string is drawn.
 
 ## Context Mode
 
-Context Mode is optional and not a dependency. When the `context-mode` command
-is on `PATH`, the footer runs `context-mode statusline` (3 second timeout) with
-the Pi session id that Context Mode's Pi adapter uses and with
-`CLAUDE_CONFIG_DIR=~/.pi`, so the statusline reads the Pi adapter's session
-store (`~/.pi/context-mode/sessions`). Only the `<number><unit> this chat` value
-is extracted from its output.
+Context Mode 2.x is optional and not a dependency. It has no statusline command
+and publishes nothing through Pi's extension status API, so the footer reads the
+same local SQLite database that Context Mode's own `ctx_stats` tool reads:
 
-If Context Mode is not installed, fails, times out, has no data for the session
-yet, or prints something else, the segment is omitted without any warning. Set
-`PI_FOOTER_SHOW_CONTEXT_MODE=0` to never run it.
+- **Where** — `<data root>/projects/<project key>/context.db`, where the data
+  root is `$CONTEXT_MODE_DATA_DIR` or `~/.context-mode`, and the project key is
+  `sha256(<git common dir of the Pi working directory>)[0:16]` — the real path of
+  the working directory itself outside a Git repository. Linked worktrees share
+  their main repository's key, exactly as in Context Mode.
+- **What** — the terminal `ctx_stats` "made" total for this session:
+  `SUM(sandbox_bytes)` over the session's rows with a tool, excluding cost rows
+  and `ctx_stats` itself, using Context Mode's own `CALLS` predicate. The Pi
+  session id is the UUID Pi assigns, which Context Mode stores verbatim.
+- **How** — one read-only connection (5 second lock timeout), one aggregate
+  query, closed immediately. Nothing is created, migrated, or written: the
+  connection is read-only, and a missing database file fails to open instead of
+  being created. The read runs at session start, when Pi re-registers the footer
+  for a resumed, new, or forked session, and at the end of every turn, in the
+  background, never inside `render()`.
+
+If Context Mode is not installed, has no database for this project, has no calls
+for this session yet, or the database cannot be opened or read, the segment is
+omitted without any warning and the rest of the footer is unaffected. A failed
+read keeps the previous value; switching sessions discards it. Set
+`PI_FOOTER_SHOW_CONTEXT_MODE=0` to never read the database.
+
+Context Mode 1.x stores its state elsewhere and has no `projects/<key>/context.db`,
+so a 1.x install simply keeps the segment hidden.
 
 ## Goal status
 
@@ -217,7 +239,7 @@ from the original package is used when the new one is unset, empty, or invalid.
 | `PI_FOOTER_SHOW_CWD`           | `PI_MINIMAL_FOOTER_SHOW_CWD`      | Show the working directory on line 2              | `0`     |
 | `PI_FOOTER_SHOW_BRANCH`        | `PI_MINIMAL_FOOTER_SHOW_BRANCH`   | Show Git branch, dirty marker, and ahead/behind   | `1`     |
 | `PI_FOOTER_SHOW_PROVIDER`      | `PI_MINIMAL_FOOTER_SHOW_PROVIDER` | Show `provider/model-id` instead of the short ID  | `0`     |
-| `PI_FOOTER_SHOW_CONTEXT_MODE`  | —                                 | Query Context Mode and show `ctx-mode`            | `1`     |
+| `PI_FOOTER_SHOW_CONTEXT_MODE`  | —                                 | Read Context Mode and show `ctx-mode`             | `1`     |
 | `PI_FOOTER_SHOW_GOAL`          | —                                 | Show the pi-goal state on line 2                  | `1`     |
 
 True values: `1`, `true`, `yes`, `on`. False values: `0`, `false`, `no`, `off`.
@@ -229,8 +251,9 @@ Credentials are read from the locations listed above only when a quota request
 is made. They are sent only to the corresponding provider's own endpoints, are
 never rendered, logged, or included in error values, and are not written
 anywhere. Command Code organization ids are cached in memory keyed by a hash of
-the API key, not the key itself. Context Mode output is reduced to the parsed
-"this chat" amount.
+the API key, not the key itself. Context Mode is read from its local database
+with a read-only connection; only one aggregate byte count is kept, and no
+session content, tool output, or file path leaves the process.
 
 For security concerns and vulnerability reporting, see the [repository security policy](../../SECURITY.md).
 
@@ -242,9 +265,19 @@ For security concerns and vulnerability reporting, see the [repository security 
 - **Undocumented endpoints** — the Codex (`chatgpt.com/backend-api/wham/usage`),
   OpenCode Go, and Command Code (`/alpha/...`) quota APIs are internal and may
   change without notice.
-- **Context Mode coupling** — the `ctx-mode` segment relies on Context Mode's
-  Pi adapter storing sessions under `~/.pi/context-mode/sessions` with session
-  ids derived from the Pi session file path, as of Context Mode 1.0.169.
+- **Context Mode coupling** — the `ctx-mode` segment relies on Context Mode
+  2.x's on-disk layout (`~/.context-mode/projects/<sha256(project root)[0:16]>/
+  context.db`, the `events` table, the raw Pi session id, and the `CALLS`
+  predicate of `ctx_stats`) as of Context Mode 2.2.0. It is undocumented
+  internals rather than an interface; a future release that moves the database
+  or renames a column hides the segment instead of showing a wrong number.
+- **Context Mode cost** — the read is synchronous inside the refresh, so a turn
+  boundary waits a few milliseconds for one indexed aggregate query; nothing is
+  read during rendering and no timer polls the database.
+- **Context Mode on Node 22** — `node:sqlite` is loaded the first time a Context
+  Mode database is read. Node 22 prints its one-time
+  `ExperimentalWarning: SQLite is an experimental feature` on stderr when that
+  happens; Node 24 does not. Nothing else in the footer loads it.
 - **Goal status coupling** — the `🎯` segment parses the text pi-goal publishes
   through `ctx.ui.setStatus("goal", …)`, as of `@narumitw/pi-goal` 0.55.x. It
   accepts `waiting` and `complete` verbatim and the other states only when they
@@ -265,8 +298,9 @@ pnpm test
 pnpm pack:check
 ```
 
-Tests run against Pi 1.0 with mocked provider responses and a mocked
-`context-mode` command; they never make network requests.
+Tests run against Pi 1.0 with mocked provider responses and local fixture
+Context Mode databases created from its published schema; they never make
+network requests and never run the `context-mode` command.
 
 ## License
 

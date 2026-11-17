@@ -123,7 +123,9 @@ export default function (pi: ExtensionAPI): void {
       // so requestRender() will work when the async fetch completes.
       if (ctx.model?.provider) selectUsageProvider(ctx.model);
 
-      contextMode.setSession(ctx.sessionManager.getSessionFile());
+      // Context Mode keys its database by the raw Pi session id and by the
+      // project of ctx.cwd; a resumed, new, or forked session re-registers here.
+      contextMode.setSession(ctx.sessionManager.getSessionId(), ctx.cwd);
       refreshContextMode();
 
       if (clockTimer) clearInterval(clockTimer);

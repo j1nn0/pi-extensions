@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `ctx-mode` segment works with Context Mode 2.x again. Context Mode 2.0
+  removed the `context-mode statusline` command the footer used, so the segment
+  had been silently hidden. The footer now reads the same local SQLite database
+  as `ctx_stats`: `<data root>/projects/<sha256(git common dir)[0:16]>/context.db`
+  with `$CONTEXT_MODE_DATA_DIR` or `~/.context-mode` as the data root.
+  - Shows this session's produced bytes — `SUM(sandbox_bytes)` over the rows
+    Context Mode counts as calls — formatted like Context Mode does
+    (`ctx-mode 426.0 KB`) instead of the removed `<number> this chat` text.
+  - One read-only connection with a 5 second lock timeout, one aggregate query,
+    no writes, no CLI launch, no polling, and no `render()` I/O. Session start
+    (including resume, new, and fork) and `turn_end` refresh in the background;
+    a failed read keeps the last value and a session switch discards it.
+  - Context Mode 1.x is no longer supported; the segment stays hidden there.
+
 ## [0.1.3] - 2026-11-16
 
 ### Added

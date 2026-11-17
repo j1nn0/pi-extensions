@@ -1,5 +1,8 @@
-import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "../index.ts";
 import { resetCommandCodeOrgCache } from "../src/usage/commandcode.ts";
@@ -31,13 +34,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await environment.cleanup();
 });
-
-function mockContextMode(output: string) {
-  vi.mocked(execFile).mockImplementation(((_file: string, _args: string[], _options: unknown, callback: Function) => {
-    queueMicrotask(() => callback(null, output));
-    return { stdin: { on() {}, end() {} } };
-  }) as never);
-}
 
 describe("provider footers", () => {
   it("renders OpenAI Codex usage", async () => {
@@ -362,54 +358,155 @@ describe("visibility flags", () => {
   });
 });
 
-describe("Context Mode", () => {
-  const output = "context-mode  ●  426 KB this chat  ·  23.2 MB lifetime  ·  across 5 tools  ·  72% kept out";
+/** Verbatim from context-mode 2.2.0 (`src/core/store/schema.ts`); only `events` is read. */
+const EVENTS_DDL = `
+CREATE TABLE IF NOT EXISTS events (
+  seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id     TEXT NOT NULL,
+  worktree       TEXT NOT NULL,
+  agent          TEXT NOT NULL,
+  kind           TEXT NOT NULL CHECK (kind IN ('prompt','edit','cmd','toolerr','index','cost','decision')),
+  tool           TEXT,
+  key            TEXT,
+  path           TEXT,
+  ok             INTEGER,
+  exit_code      INTEGER,
+  bytes          INTEGER,
+  body           TEXT,
+  turn           INTEGER NOT NULL,
+  sandbox_bytes  INTEGER NOT NULL DEFAULT 0,
+  returned_bytes INTEGER NOT NULL DEFAULT 0,
+  created_at     INTEGER NOT NULL,
+  accessed_at    INTEGER NOT NULL
+);
+`;
+/** Verbatim column order from context-mode 2.2.0 (`src/core/journal/append.ts`). */
+const INSERT_EVENT =
+  "INSERT INTO events(session_id, worktree, agent, kind, tool, key, path, ok, exit_code, bytes, body, turn, sandbox_bytes, returned_bytes, created_at, accessed_at) " +
+  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-  it("shows the this-chat amount when Context Mode is available and refreshes on turn end", async () => {
-    mockContextMode(output);
-    const footer = createFooterHarness(extension, { model: OPENCODE });
+const CONTEXT_MODE_SESSION = "01a1e320-57a2-7170-9e24-97c18523d7d8";
+const QUOTA_LINE = "5h 56% ↻ 14:38 │ 7d 87% ↻ 10/07 12:00 │ mo 9% ↻ 11/01 12:00 │ 6h29m";
+
+/** Context Mode's layout: `<data root>/projects/<sha256(project root)[0:16]>/context.db`. */
+function contextModeDatabasePath(cwd: string): string {
+  const key = createHash("sha256").update(realpathSync.native(cwd)).digest("hex").slice(0, 16);
+  return join(environment.home, ".context-mode", "projects", key, "context.db");
+}
+
+/** Records Context Mode tool calls, each producing `produced` bytes in the current session. */
+function appendContextModeCall(produced: number[], sessionId = CONTEXT_MODE_SESSION): void {
+  const dbPath = contextModeDatabasePath(environment.project);
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  db.exec(EVENTS_DDL);
+  const insert = db.prepare(INSERT_EVENT);
+  for (const bytes of produced) {
+    const now = Date.now();
+    insert.run(sessionId, environment.project, "pi", "index", "ctx_index", null, null, null, null, null, null, 1, bytes, bytes, now, now);
+  }
+  db.close();
+}
+
+describe("Context Mode", () => {
+  it("shows the current session's produced bytes and refreshes at turn end", async () => {
+    appendContextModeCall([262_144, 174_080]);
+    const footer = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
     await footer.start();
     await settleAsync();
-    expect(footer.plain(120)[1]).toBe("5h 56% ↻ 14:38 │ 7d 87% ↻ 10/07 12:00 │ mo 9% ↻ 11/01 12:00 │ 6h29m │ ctx-mode 426KB");
+    expect(footer.plain(120)[1]).toBe(`${QUOTA_LINE} │ ctx-mode 426.0 KB`);
 
-    mockContextMode(output.replace("426 KB", "1.2 MB"));
+    appendContextModeCall([122_880]);
     await footer.turnEnd();
     await settleAsync();
-    expect(footer.plain(120)[1]).toMatch(/│ ctx-mode 1\.2MB$/);
-    expect(vi.mocked(execFile)).toHaveBeenCalledTimes(2);
+    expect(footer.plain(120)[1]).toBe(`${QUOTA_LINE} │ ctx-mode 546.0 KB`);
     footer.dispose();
   });
 
-  it("omits the segment silently when Context Mode is not installed", async () => {
-    const footer = createFooterHarness(extension, { model: OPENCODE });
+  it("omits the segment silently when the project has no Context Mode database", async () => {
+    const footer = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
     await footer.start();
     await settleAsync();
-    expect(footer.plain(120)[1]).not.toContain("ctx-mode");
+    expect(footer.plain(120)).toHaveLength(2);
+    expect(footer.plain(120)[1]).toBe(QUOTA_LINE);
     footer.dispose();
   });
 
-  it("omits the segment for malformed output", async () => {
-    mockContextMode("context-mode  ●  saves ~98% of context window");
-    const footer = createFooterHarness(extension, { model: OPENCODE });
-    await footer.start();
+  it("omits the segment for a session without calls and for an unreadable database", async () => {
+    appendContextModeCall([4096], "01a1e36c-8a86-7170-9e24-97c2f92afab1");
+    const otherSession = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
+    await otherSession.start();
     await settleAsync();
-    expect(footer.plain(120)[1]).not.toContain("ctx-mode");
-    footer.dispose();
+    expect(otherSession.plain(120)[1]).not.toContain("ctx-mode");
+    otherSession.dispose();
+
+    writeFileSync(contextModeDatabasePath(environment.project), "not a database");
+    const broken = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
+    await broken.start();
+    await settleAsync();
+    expect(broken.plain(120)[1]).not.toContain("ctx-mode");
+    broken.dispose();
   });
 
-  it("never runs Context Mode when disabled or for sessions without a file", async () => {
+  it("never reads Context Mode when disabled or for a session without an id", async () => {
+    appendContextModeCall([262_144, 174_080]);
+
     process.env.PI_FOOTER_SHOW_CONTEXT_MODE = "0";
-    const disabled = createFooterHarness(extension, { model: OPENCODE });
+    const disabled = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
     await disabled.start();
+    await settleAsync();
     await disabled.turnEnd();
+    await settleAsync();
+    expect(disabled.plain(120)[1]).not.toContain("ctx-mode");
     disabled.dispose();
     delete process.env.PI_FOOTER_SHOW_CONTEXT_MODE;
 
-    const inMemory = createFooterHarness(extension, { model: OPENCODE, sessionFile: undefined });
-    await inMemory.start();
-    await inMemory.turnEnd();
-    inMemory.dispose();
+    const anonymous = createFooterHarness(extension, { model: OPENCODE, sessionId: undefined });
+    await anonymous.start();
+    await settleAsync();
+    await anonymous.turnEnd();
+    await settleAsync();
+    expect(anonymous.plain(120)[1]).not.toContain("ctx-mode");
+    anonymous.dispose();
+  });
 
-    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+  it("shows the Goal segment next to Context Mode", async () => {
+    appendContextModeCall([262_144, 174_080]);
+    const footer = createFooterHarness(extension, {
+      model: { provider: "openrouter", id: "glm-5", reasoning: false },
+      sessionId: CONTEXT_MODE_SESSION,
+    });
+    await footer.start();
+    await settleAsync();
+    expect(footer.plain(120)[1]).toBe("6h29m │ ctx-mode 426.0 KB");
+
+    footer.setExtensionStatus("goal", "active 12m · automatic 12/100");
+    expect(footer.plain(120)[1]).toBe("6h29m │ 🎯 goal 12/100 │ ctx-mode 426.0 KB");
+    footer.dispose();
+  });
+
+  it("drops Context Mode before anything else when line 2 shrinks", async () => {
+    appendContextModeCall([262_144, 174_080]);
+    const footer = createFooterHarness(extension, { model: OPENCODE, sessionId: CONTEXT_MODE_SESSION });
+    await footer.start();
+    await settleAsync();
+    expect(footer.plain(120)[1]).toContain("ctx-mode 426.0 KB");
+
+    // At 80 columns only the Context Mode segment has to go.
+    const wide = footer.plain(80);
+    expect(wide[1]).toBe(QUOTA_LINE);
+    const narrow = footer.plain(40);
+    expect(narrow).toHaveLength(2);
+    expect(narrow[1]).not.toContain("ctx-mode");
+    expect(visibleWidth(narrow[1] ?? "")).toBeLessThanOrEqual(40);
+    footer.dispose();
+
+    // Without any Context Mode data the same widths render identically.
+    const plain = createFooterHarness(extension, { model: OPENCODE });
+    await plain.start();
+    await settleAsync();
+    expect(plain.plain(80)).toEqual(wide);
+    expect(plain.plain(40)).toEqual(narrow);
+    plain.dispose();
   });
 });
