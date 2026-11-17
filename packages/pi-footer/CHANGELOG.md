@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-17
+
 ### Fixed
 
 - The `ctx-mode` segment works with Context Mode 2.x again. Context Mode 2.0
@@ -12,7 +14,7 @@
   - Shows this session's produced bytes — `SUM(sandbox_bytes)` over the rows
     Context Mode counts as calls — formatted like Context Mode does
     (`ctx-mode 426.0 KB`) instead of the removed `<number> this chat` text.
-  - One read-only connection with a 5 second lock timeout, one aggregate query,
+  - One read-only connection with a 500 ms lock timeout, one aggregate query,
     no writes, no CLI launch, no polling, and no `render()` I/O. Session start
     (including resume, new, and fork) and `turn_end` refresh in the background;
     a failed read keeps the last value and a session switch discards it.
